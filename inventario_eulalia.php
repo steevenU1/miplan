@@ -1,5 +1,5 @@
 <?php
-// inventario_eulalia.php — LUGA (Almacén Central) UI modernizada
+// inventario_eulalia.php — Central MiPlan (Almacén Central) — versión flexible “Almacén/Eulalia”
 session_start();
 
 if (!isset($_SESSION['id_usuario'])) {
@@ -7,7 +7,7 @@ if (!isset($_SESSION['id_usuario'])) {
 }
 
 $ROL = $_SESSION['rol'] ?? '';
-$ALLOWED = ['Admin','GerenteZona','Super']; // <-- aquí agregamos GerenteZona (y Super opcional)
+$ALLOWED = ['Admin','GerenteZona','Super'];
 if (!in_array($ROL, $ALLOWED, true)) {
   header("Location: 403.php"); exit();
 }
@@ -15,27 +15,58 @@ if (!in_array($ROL, $ALLOWED, true)) {
 require_once __DIR__.'/db.php';
 require_once __DIR__.'/navbar.php';
 
-// ==== Helper local (evita colisiones) ====
+// ==== Helper seguro ====
 if (!function_exists('h')) {
   function h($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
 }
+
 // ===============================
-//   Obtener ID de Eulalia
+//   Resolver sucursal de Almacén
 // ===============================
-$idEulalia = 0;
-// Intento exacto + fallback por si el nombre tiene acentos o variantes
-if ($stmt = $conn->prepare("SELECT id FROM sucursales WHERE nombre='Eulalia' LIMIT 1")) {
-  $stmt->execute(); $res = $stmt->get_result();
-  if ($row = $res->fetch_assoc()) $idEulalia = (int)$row['id'];
-  $stmt->close();
+$nombreAlmacen = null;
+$idAlmacen = 0;
+
+// 1) Exactos comunes (sin y con acento), luego “Eulalia”
+$intentos = ['Almacen', 'Almacén', 'Eulalia'];
+foreach ($intentos as $try) {
+  if ($stmt = $conn->prepare("SELECT id, nombre FROM sucursales WHERE nombre = ? LIMIT 1")) {
+    $stmt->bind_param("s", $try);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($row = $res->fetch_assoc()) {
+      $idAlmacen = (int)$row['id'];
+      $nombreAlmacen = $row['nombre'];
+      $stmt->close();
+      break;
+    }
+    $stmt->close();
+  }
 }
-if ($idEulalia <= 0) {
-  $stmt = $conn->prepare("SELECT id FROM sucursales WHERE nombre LIKE '%Eulalia%' LIMIT 1");
-  $stmt->execute(); $res = $stmt->get_result();
-  if ($row = $res->fetch_assoc()) $idEulalia = (int)$row['id'];
-  $stmt->close();
+
+// 2) Fallbacks con LIKE por si hay variantes
+if ($idAlmacen <= 0) {
+  $likes = ['%Almac%', '%Eulalia%'];
+  foreach ($likes as $lk) {
+    if ($stmt = $conn->prepare("SELECT id, nombre FROM sucursales WHERE nombre LIKE ? LIMIT 1")) {
+      $stmt->bind_param("s", $lk);
+      $stmt->execute();
+      $res = $stmt->get_result();
+      if ($row = $res->fetch_assoc()) {
+        $idAlmacen = (int)$row['id'];
+        $nombreAlmacen = $row['nombre'];
+        $stmt->close();
+        break;
+      }
+      $stmt->close();
+    }
+  }
 }
-if ($idEulalia <= 0) { die("No se encontró la sucursal 'Eulalia'. Verifica el catálogo de sucursales."); }
+
+// Si no se encontró, seguimos pero con tabla vacía y aviso
+$noEncontrado = ($idAlmacen <= 0);
+if ($noEncontrado) {
+  $nombreAlmacen = 'Almacén (no encontrado)';
+}
 
 // ===============================
 //   Filtros
@@ -64,10 +95,20 @@ SELECT
     TIMESTAMPDIFF(DAY, i.fecha_ingreso, NOW()) AS antiguedad_dias
 FROM inventario i
 INNER JOIN productos p ON p.id = i.id_producto
-WHERE i.id_sucursal = ?
+WHERE 1=1
 ";
-$params = [$idEulalia];
-$types  = "i";
+
+$params = [];
+$types  = "";
+
+// Si hay almacén válido, filtramos por id_sucursal; si no, forzamos vacío (id -1)
+if ($noEncontrado) {
+  $sql .= " AND i.id_sucursal = -1";
+} else {
+  $sql .= " AND i.id_sucursal = ?";
+  $params[] = $idAlmacen; 
+  $types   .= "i";
+}
 
 if ($fImei !== '') {
   $sql .= " AND (p.imei1 LIKE ? OR p.imei2 LIKE ?)";
@@ -102,7 +143,7 @@ $sql .= " ORDER BY i.fecha_ingreso ASC";
 
 $stmt = $conn->prepare($sql);
 if (!$stmt) { die("Error de consulta: ".$conn->error); }
-$stmt->bind_param($types, ...$params);
+if ($types !== "") { $stmt->bind_param($types, ...$params); }
 $stmt->execute();
 $result = $stmt->get_result();
 
@@ -138,7 +179,7 @@ $promProfit = $total ? round($sumProfit/$total, 2) : 0.0;
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Inventario – Almacén Eulalia</title>
+  <title>Inventario — <?= h($nombreAlmacen) ?></title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="/img/favicon.ico?v=7" sizes="any">
 
@@ -185,8 +226,8 @@ $promProfit = $total ? round($sumProfit/$total, 2) : 0.0;
   <!-- Encabezado -->
   <div class="page-head">
     <div>
-      <h2 class="page-title">📦 Inventario — Almacén Eulalia</h2>
-      <div class="mt-1"><span class="role-chip">Admin</span></div>
+      <h2 class="page-title">📦 Inventario — <?= h($nombreAlmacen) ?></h2>
+      <div class="mt-1"><span class="role-chip"><?= h($ROL) ?></span></div>
     </div>
     <div class="toolbar">
       <button class="btn btn-outline-secondary btn-sm rounded-pill" data-bs-toggle="collapse" data-bs-target="#filtrosCollapse"><i class="bi bi-sliders me-1"></i> Filtros</button>
@@ -196,6 +237,14 @@ $promProfit = $total ? round($sumProfit/$total, 2) : 0.0;
       <a href="inventario_eulalia.php" class="btn btn-light btn-sm rounded-pill border"><i class="bi bi-arrow-counterclockwise me-1"></i> Limpiar</a>
     </div>
   </div>
+
+  <?php if ($noEncontrado): ?>
+    <div class="alert alert-warning d-flex align-items-center" role="alert">
+      <i class="bi bi-exclamation-triangle-fill me-2"></i>
+      No se encontró una sucursal llamada <strong>“Almacén/Almacen/Eulalia”</strong> en el catálogo. 
+      Crea la sucursal en <em>sucursales</em> o ajusta el nombre, y vuelve a cargar.
+    </div>
+  <?php endif; ?>
 
   <!-- KPIs -->
   <div class="row g-3 mb-3">

@@ -619,7 +619,7 @@ function item_active(string $f, string $c): string
   <div class="container-fluid">
 
     <a class="navbar-brand d-flex align-items-center" href="dashboard_unificado.php">
-      <img src="https://i.ibb.co/DDw7yjYV/43f8e23a-8877-4928-9407-32d18fb70f79.png" class="me-2 rounded-circle" alt="Logo">
+      <img src="https://i.ibb.co/Hpd0t2dm/Dise-o-sin-t-tulo.png" class="me-2 rounded-circle" alt="Logo">
       <span class="brand-title">Central&nbsp;<strong>2.0</strong></span>
     </a>
 
@@ -725,7 +725,7 @@ function item_active(string $f, string $c): string
                 </li>
                 <li class="dropdown-header">Administrador</li>
                 <li><a class="dropdown-item <?= item_active('inventario_resumen.php', $current) ?>" href="inventario_resumen.php">Resumen Global</a></li>
-                <li><a class="dropdown-item <?= item_active('inventario_eulalia.php', $current) ?>" href="inventario_eulalia.php">Inventario Eulalia</a></li>
+                <li><a class="dropdown-item <?= item_active('inventario_eulalia.php', $current) ?>" href="inventario_eulalia.php">Inventario Almacén</a></li>
                 <li><a class="dropdown-item <?= item_active('inventario_retiros.php', $current) ?>" href="inventario_retiros.php">🛑 Retiros de Inventario</a></li>
               <?php endif; ?>
             <?php endif; ?>
@@ -762,7 +762,7 @@ function item_active(string $f, string $c): string
             </a>
             <ul class="dropdown-menu">
               <?php if (in_array($rolUsuario, ['Admin', 'Super'])): ?>
-                <li><a class="dropdown-item <?= item_active('generar_traspaso.php', $current) ?>" href="generar_traspaso.php">Generar traspaso desde Eulalia</a></li>
+                <li><a class="dropdown-item <?= item_active('generar_traspaso.php', $current) ?>" href="generar_traspaso.php">Generar traspaso desde Almacen</a></li>
               <?php endif; ?>
 
               <li><a class="dropdown-item <?= item_active('generar_traspaso_sims.php', $current) ?>" href="generar_traspaso_sims.php">Generar traspaso SIMs</a></li>
