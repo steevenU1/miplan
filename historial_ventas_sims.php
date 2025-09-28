@@ -1,15 +1,32 @@
 <?php
+/* =========================================================
+   Historial de Ventas SIM — versión corregida
+   - Semana Mar→Lun estable con TZ MX antes de calcular
+   - Filtros GET robustos (tipo_venta, usuario, buscar)
+   - Navegación prev/next preserva filtros
+   - Export semanal y mensual arrastran exactamente los GET
+========================================================= */
+
 session_start();
 if (!isset($_SESSION['id_usuario'])) {
     header("Location: index.php");
     exit();
 }
 
-include 'db.php';
+/* --- TZ antes de cualquier DateTime --- */
+date_default_timezone_set('America/Mexico_City');
+
+require_once __DIR__ . '/db.php';
 
 /* ========================
    HELPERS
 ======================== */
+function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+
+function get_get(string $key, $default = '') {
+    return isset($_GET[$key]) ? $_GET[$key] : $default;
+}
+
 function hasColumn(mysqli $conn, string $table, string $column): bool {
     $tableEsc  = $conn->real_escape_string($table);
     $columnEsc = $conn->real_escape_string($column);
@@ -25,42 +42,48 @@ function hasColumn(mysqli $conn, string $table, string $column): bool {
     return $res && $res->num_rows > 0;
 }
 
-function obtenerSemanaPorIndice($offset = 0) {
-    // Semana martes-lunes
-    $hoy = new DateTime();
-    $diaSemana = (int)$hoy->format('N'); // 1=lunes ... 7=domingo
-    $dif = $diaSemana - 2;               // martes=2
+/**
+ * Semana operativa Mar→Lun por índice (0 = semana actual, 1 = anterior, etc.)
+ * Retorna [DateTimeImmutable $inicio, DateTimeImmutable $fin]
+ */
+function obtenerSemanaPorIndice(int $offset = 0): array {
+    // Día actual en MX
+    $hoy = new DateTimeImmutable('now'); // TZ ya seteada
+    // 1=lun ... 7=dom
+    $diaSemana = (int)$hoy->format('N');
+
+    // Queremos inicio en martes 00:00:00
+    $dif = $diaSemana - 2; // martes=2
     if ($dif < 0) $dif += 7;
 
-    $inicio = new DateTime();
-    $inicio->modify("-$dif days")->setTime(0,0,0);
+    $inicio = $hoy->sub(new DateInterval('P' . $dif . 'D'))
+                  ->setTime(0,0,0);
 
-    if ($offset > 0) {
-        $inicio->modify("-" . (7*$offset) . " days");
+    if ($offset !== 0) {
+        $inicio = $inicio->sub(new DateInterval('P' . (7 * max(0, $offset)) . 'D'));
     }
 
-    $fin = clone $inicio;
-    $fin->modify("+6 days")->setTime(23,59,59);
+    $fin = $inicio->add(new DateInterval('P6D'))
+                  ->setTime(23,59,59);
 
     return [$inicio, $fin];
 }
-function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
 function mesOptionsHtml($mesSel){
     $meses = [1=>'Enero',2=>'Febrero',3=>'Marzo',4=>'Abril',5=>'Mayo',6=>'Junio',7=>'Julio',8=>'Agosto',9=>'Septiembre',10=>'Octubre',11=>'Noviembre',12=>'Diciembre'];
     $html = '';
     foreach($meses as $k=>$v){
-        $sel = ($k == $mesSel) ? 'selected' : '';
+        $sel = ($k == (int)$mesSel) ? 'selected' : '';
         $html .= "<option value=\"$k\" $sel>$v</option>";
     }
     return $html;
 }
 function anioOptionsHtml($anioSel, $rango = 6){
-    $min = $anioSel - $rango;
-    $max = $anioSel + $rango;
+    $min = (int)$anioSel - $rango;
+    $max = (int)$anioSel + $rango;
     $html = '';
     for($a=$max;$a>=$min;$a--){
-        $sel = ($a == $anioSel) ? 'selected' : '';
+        $sel = ($a == (int)$anioSel) ? 'selected' : '';
         $html .= "<option value=\"$a\" $sel>$a</option>";
     }
     return $html;
@@ -69,7 +92,7 @@ function anioOptionsHtml($anioSel, $rango = 6){
 /* ========================
    FILTROS BASE (SEMANA)
 ======================== */
-$semanaSeleccionada = isset($_GET['semana']) ? (int)$_GET['semana'] : 0;
+$semanaSeleccionada = (int)get_get('semana', 0);
 list($inicioSemanaObj, $finSemanaObj) = obtenerSemanaPorIndice($semanaSeleccionada);
 $inicioSemana = $inicioSemanaObj->format('Y-m-d');
 $finSemana    = $finSemanaObj->format('Y-m-d');
@@ -77,9 +100,9 @@ $finSemana    = $finSemanaObj->format('Y-m-d');
 $id_sucursal = (int)($_SESSION['id_sucursal'] ?? 0);
 $rol         = $_SESSION['rol'] ?? 'Ejecutivo';
 
-date_default_timezone_set('America/Mexico_City');
-$mesDefault  = isset($_GET['mes'])  ? (int)$_GET['mes']  : (int)date('n');
-$anioDefault = isset($_GET['anio']) ? (int)$_GET['anio'] : (int)date('Y');
+/* Mes/Año para export mensual (no afectan la vista semanal) */
+$mesDefault  = (int)get_get('mes',  (int)date('n'));
+$anioDefault = (int)get_get('anio', (int)date('Y'));
 
 /* =========================================================
    Filtro de USUARIOS para el <select>:
@@ -108,7 +131,6 @@ $sqlUsuarios = "
           ELSE 1 
         END AS es_inactivo
     FROM usuarios u
-    /* cuenta ventas en la semana para decidir si mostrar inactivos con ventas */
     LEFT JOIN (
         SELECT id_usuario, COUNT(*) AS cnt
         FROM ventas_sims
@@ -137,7 +159,7 @@ $where  = " WHERE DATE(vs.fecha_venta) BETWEEN ? AND ?";
 $params = [$inicioSemana, $finSemana];
 $types  = "ss";
 
-// Filtro según rol
+/* Rol */
 if ($rol === 'Ejecutivo') {
     $where   .= " AND vs.id_usuario=?";
     $params[] = (int)$_SESSION['id_usuario'];
@@ -148,55 +170,58 @@ if ($rol === 'Ejecutivo') {
     $types   .= "i";
 }
 
-// Filtros GET
-if (!empty($_GET['tipo_venta'])) {
+/* Filtros GET */
+$tipoVenta = trim((string)get_get('tipo_venta', ''));
+if ($tipoVenta !== '') {
     $where   .= " AND vs.tipo_venta=?";
-    $params[] = $_GET['tipo_venta'];
+    $params[] = $tipoVenta;
     $types   .= "s";
 }
-if (!empty($_GET['usuario'])) {
+
+$usuarioSel = (string)get_get('usuario', '');
+if ($usuarioSel !== '') {
     $where   .= " AND vs.id_usuario=?";
-    $params[] = (int)$_GET['usuario'];
+    $params[] = (int)$usuarioSel;
     $types   .= "i";
 }
 
-// Buscar por ICCID o Cliente (server-side)
-if (!empty($_GET['buscar'])) {
+$buscar = trim((string)get_get('buscar', ''));
+if ($buscar !== '') {
     $where   .= " AND (vs.nombre_cliente LIKE ? OR EXISTS(
                     SELECT 1
                     FROM detalle_venta_sims d2
                     LEFT JOIN inventario_sims i2 ON d2.id_sim = i2.id
                     WHERE d2.id_venta = vs.id AND i2.iccid LIKE ?
                  ))";
-    $busqueda = "%".$_GET['buscar']."%";
-    $params[] = $busqueda;
-    $params[] = $busqueda;
+    $busqLike = "%".$buscar."%";
+    $params[] = $busqLike;
+    $params[] = $busqLike;
     $types   .= "ss";
 }
 
 /* ========================
    CONSULTA HISTORIAL
    (LEFT JOIN para incluir eSIM)
-   🔧 Cambios: traemos i.operador como operador_inv
+   Preferimos operador del inventario (i.operador) y caemos a vs.tipo_sim
 ======================== */
 $sqlVentas = "
     SELECT
         vs.id,
         vs.tipo_venta,
-        vs.modalidad,               -- (solo aplica a pospago)
+        vs.modalidad,
         vs.precio_total,
         vs.comision_ejecutivo,
         vs.comision_gerente,
         vs.fecha_venta,
         vs.comentarios,
         vs.id_usuario,
-        vs.nombre_cliente,          -- cliente (nullable)
-        vs.es_esim,                 -- eSIM?
-        vs.tipo_sim,                -- Operador guardado en la venta
+        vs.nombre_cliente,
+        vs.es_esim,
+        vs.tipo_sim,
         u.nombre AS usuario,
         s.nombre AS sucursal,
         i.iccid,
-        i.operador AS operador_inv  -- 👈 operador del inventario (preferente)
+        i.operador AS operador_inv
     FROM ventas_sims vs
     INNER JOIN usuarios   u ON vs.id_usuario  = u.id
     INNER JOIN sucursales s ON vs.id_sucursal = s.id
@@ -213,7 +238,7 @@ $ventas = $res->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
 /* ========================
-   RESÚMENES (front)
+   RESÚMENES
 ======================== */
 $totalVentas   = count($ventas);
 $sumPrecio     = 0.0;
@@ -334,6 +359,7 @@ foreach ($ventas as $v) {
         <?php
           $prev = max(0, $semanaSeleccionada - 1);
           $next = $semanaSeleccionada + 1;
+          // Preservar todos los filtros actuales
           $qsPrev = $_GET; $qsPrev['semana'] = $prev;
           $qsNext = $_GET; $qsNext['semana'] = $next;
         ?>
@@ -357,22 +383,24 @@ foreach ($ventas as $v) {
       <div class="col-md-3">
         <label class="small-muted">Tipo de venta</label>
         <select name="tipo_venta" class="form-select">
+          <?php $tv = (string)get_get('tipo_venta',''); ?>
           <option value="">Todas</option>
-          <option value="Nueva"         <?= (($_GET['tipo_venta'] ?? '')=='Nueva')?'selected':'' ?>>Nueva</option>
-          <option value="Portabilidad"  <?= (($_GET['tipo_venta'] ?? '')=='Portabilidad')?'selected':'' ?>>Portabilidad</option>
-          <option value="Regalo"        <?= (($_GET['tipo_venta'] ?? '')=='Regalo')?'selected':'' ?>>Regalo</option>
-          <option value="Pospago"       <?= (($_GET['tipo_venta'] ?? '')=='Pospago')?'selected':'' ?>>Pospago</option>
+          <option value="Nueva"         <?= $tv==='Nueva'?'selected':'' ?>>Nueva</option>
+          <option value="Portabilidad"  <?= $tv==='Portabilidad'?'selected':'' ?>>Portabilidad</option>
+          <option value="Regalo"        <?= $tv==='Regalo'?'selected':'' ?>>Regalo</option>
+          <option value="Pospago"       <?= $tv==='Pospago'?'selected':'' ?>>Pospago</option>
         </select>
       </div>
       <div class="col-md-3">
         <label class="small-muted">Usuario</label>
         <select name="usuario" class="form-select">
+          <?php $uSel = (string)get_get('usuario',''); ?>
           <option value="">Todos</option>
 
           <?php if (!empty($usuariosActivos)): ?>
             <optgroup label="Activos">
               <?php foreach ($usuariosActivos as $u): ?>
-                <option value="<?= (int)$u['id'] ?>" <?= (($_GET['usuario'] ?? '')==$u['id'])?'selected':'' ?>>
+                <option value="<?= (int)$u['id'] ?>" <?= ($uSel!=='' && (int)$uSel===(int)$u['id'])?'selected':'' ?>>
                   <?= h($u['nombre']) ?>
                 </option>
               <?php endforeach; ?>
@@ -382,7 +410,7 @@ foreach ($ventas as $v) {
           <?php if (!empty($usuariosInactivos)): ?>
             <optgroup label="Inactivos (con ventas en semana)">
               <?php foreach ($usuariosInactivos as $u): ?>
-                <option value="<?= (int)$u['id'] ?>" <?= (($_GET['usuario'] ?? '')==$u['id'])?'selected':'' ?>>
+                <option value="<?= (int)$u['id'] ?>" <?= ($uSel!=='' && (int)$uSel===(int)$u['id'])?'selected':'' ?>>
                   <?= h($u['nombre']) ?> (inactivo)
                 </option>
               <?php endforeach; ?>
@@ -393,7 +421,7 @@ foreach ($ventas as $v) {
       <div class="col-md-3">
         <label class="small-muted">Buscar (ICCID o Cliente)</label>
         <input id="searchInput" name="buscar" type="text" class="form-control"
-               value="<?= h($_GET['buscar'] ?? '') ?>"
+               value="<?= h(get_get('buscar','')) ?>"
                placeholder="Ej. 8952..., Juan Pérez">
       </div>
     </div>
@@ -413,7 +441,7 @@ foreach ($ventas as $v) {
       <button class="btn btn-primary"><i class="bi bi-funnel"></i> Filtrar</button>
       <a href="historial_ventas_sims.php" class="btn btn-secondary">Limpiar</a>
 
-      <!-- Exportar SEMANAL -->
+      <!-- Exportar SEMANAL (arrastra todos los GET actuales) -->
       <button
         type="submit"
         class="btn btn-success"
@@ -425,7 +453,7 @@ foreach ($ventas as $v) {
         <i class="bi bi-file-earmark-excel"></i> Exportar Semanal
       </button>
 
-      <!-- Exportar MENSUAL -->
+      <!-- Exportar MENSUAL (usa Mes/Año + filtros actuales) -->
       <button
         type="submit"
         class="btn btn-outline-success"
@@ -476,7 +504,7 @@ foreach ($ventas as $v) {
                 $puedeEliminar = (($_SESSION['rol'] ?? '') === 'Admin');
                 $isEsim   = (int)($v['es_esim'] ?? 0) === 1;
                 $tipoIcon = $isEsim ? 'bi-sim' : 'bi-sim-fill';
-                // ✅ Preferimos operador del inventario; si no hay, usamos el guardado en la venta
+                // Preferimos operador del inventario; si no hay, usamos el guardado en la venta
                 $operadorInv = trim((string)($v['operador_inv'] ?? ''));
                 $operadorVs  = trim((string)($v['tipo_sim'] ?? ''));
                 $operador    = $operadorInv !== '' ? $operadorInv : $operadorVs;
@@ -541,7 +569,7 @@ foreach ($ventas as $v) {
   </div>
 </div>
 
-<!-- Bootstrap JS activado para el modal -->
+<!-- Bootstrap JS (si usas el modal) -->
 <!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script> -->
 <script>
 // Modal: setear id_venta

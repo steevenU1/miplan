@@ -884,12 +884,12 @@ function item_active(string $f, string $c): string
             </a>
             <ul class="dropdown-menu">
               <!-- 🔝 Bitacora Sistema (solo Admin) -->
-              <?php if ($rolUsuario === 'Admin'): ?>
+              <!-- <?php if ($rolUsuario === 'Admin'): ?>
                 <li><a class="dropdown-item <?= item_active('tareas.php', $current) ?>" href="tareas.php">Bitacora Sistema</a></li>
                 <li>
                   <hr class="dropdown-divider">
                 </li>
-              <?php endif; ?>
+              <?php endif; ?> -->
 
               <li class="dropdown-header">Insumos & Precios</li>
               <li><a class="dropdown-item <?= item_active('insumos_catalogo.php', $current) ?>" href="insumos_catalogo.php">Catálogo de insumos</a></li>
@@ -922,11 +922,11 @@ function item_active(string $f, string $c): string
               <li><a class="dropdown-item <?= item_active('alta_usuario.php', $current) ?>" href="alta_usuario.php">Alta de usuario</a></li>
               <li><a class="dropdown-item <?= item_active('alta_sucursal.php', $current) ?>" href="alta_sucursal.php">Alta de sucursal</a></li>
 
-              <li class="dropdown-header">Calidad</li>
+              <!-- <li class="dropdown-header">Calidad</li> -->
               <li>
-                <a class="dropdown-item <?= item_active('incidencias_matriz.php', $current) ?>" href="incidencias_matriz.php">
+                <!-- <a class="dropdown-item <?= item_active('incidencias_matriz.php', $current) ?>" href="incidencias_matriz.php">
                   <i class="bi bi-bug me-1"></i>Matriz de incidencias
-                </a>
+                </a> -->
               </li>
             </ul>
           </li>
