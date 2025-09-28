@@ -70,7 +70,7 @@ $st->close();
 $totalSims = array_sum(array_map(fn($r)=> (int)$r['sims'], $cajas));
 
 // URL del logo (puedes cambiarla a un archivo local, ej. /assets/logo.png)
-$LOGO_URL = "https://i.ibb.co/Jwgbnjdv/Captura-de-pantalla-2025-05-29-230425.png";
+$LOGO_URL = "https://i.ibb.co/Hpd0t2dm/Dise-o-sin-t-tulo.png";
 ?>
 <!DOCTYPE html>
 <html lang="es">
