@@ -13,7 +13,7 @@ if (!isset($_SESSION['id_usuario'])) {
 require_once __DIR__ . '/db.php';
 
 // --- Config de logo (usa tu URL)
-$LOGO_URL = 'https://i.ibb.co/2Y3Cgfwk/Captura-de-pantalla-2025-05-29-230425-1.png';
+$LOGO_URL = 'https://i.ibb.co/Hpd0t2dm/Dise-o-sin-t-tulo.png';
 
 // Intenta embeber como data URI (mejor para impresión)
 $logoSrc = $LOGO_URL;

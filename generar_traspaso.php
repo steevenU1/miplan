@@ -1,5 +1,5 @@
 <?php
-// generar_traspaso_eulalia.php
+// generar_traspaso_mp_almacen.php — Mi Plan
 session_start();
 if (!isset($_SESSION['id_usuario']) || !in_array(($_SESSION['rol'] ?? ''), ['Admin','Gerente'], true)) {
   header("Location: 403.php"); exit();
@@ -11,33 +11,64 @@ $mensaje    = '';
 $acuseUrl   = '';     // URL del acuse con print=1
 $acuseReady = false;  // bandera para disparar el modal en el front
 
-// ===============================
-// 1) Resolver ID de "Eulalia" (Almacén central) de forma tolerante
-// ===============================
-$idEulalia = 0;
+/* ===============================
+   1) Resolver ID de "MP Almacen General" (Almacén central)
+   =============================== */
+$CENTRAL_NAME = 'MP Almacen General';
+$idCentral = 0;
 
-// a) intento exacto con las variantes más comunes
-if ($stmt = $conn->prepare("SELECT id FROM sucursales WHERE LOWER(nombre) IN ('eulalia','luga eulalia') LIMIT 1")) {
+// a) intentos exactos con variantes (con/sin acento y prefijo MP)
+if ($stmt = $conn->prepare("
+  SELECT id
+  FROM sucursales
+  WHERE LOWER(nombre) IN (
+    'mp almacen general',
+    'mp almacén general',
+    'almacen general',
+    'almacén general',
+    'mp almacen',
+    'mp almacén'
+  )
+  LIMIT 1
+")) {
   $stmt->execute();
   $res = $stmt->get_result();
-  if ($row = $res->fetch_assoc()) $idEulalia = (int)$row['id'];
+  if ($row = $res->fetch_assoc()) $idCentral = (int)$row['id'];
   $stmt->close();
 }
 
-// b) fallback: por LIKE insensible a mayúsculas
-if ($idEulalia <= 0) {
-  $rs = $conn->query("SELECT id FROM sucursales WHERE LOWER(nombre) LIKE '%eulalia%' ORDER BY LENGTH(nombre) ASC LIMIT 1");
-  if ($rs && $r = $rs->fetch_assoc()) $idEulalia = (int)$r['id'];
+// b) fallback: búsqueda por LIKE flexible (suele ser acento-insensible con *_ci)
+if ($idCentral <= 0) {
+  $rs = $conn->query("
+    SELECT id
+    FROM sucursales
+    WHERE LOWER(nombre) LIKE '%mp%' AND LOWER(nombre) LIKE '%almacen%' AND LOWER(nombre) LIKE '%general%'
+    ORDER BY LENGTH(nombre) ASC
+    LIMIT 1
+  ");
+  if ($rs && $r = $rs->fetch_assoc()) $idCentral = (int)$r['id'];
 }
 
-if ($idEulalia <= 0) {
-  echo "<div class='container my-4'><div class='alert alert-danger shadow-sm'>No se encontró la sucursal de inventario central “Eulalia”. Verifica el catálogo de sucursales.</div></div>";
+// c) último recurso: cualquier 'almacen general'
+if ($idCentral <= 0) {
+  $rs2 = $conn->query("
+    SELECT id
+    FROM sucursales
+    WHERE LOWER(nombre) LIKE '%almacen%' AND LOWER(nombre) LIKE '%general%'
+    ORDER BY LENGTH(nombre) ASC
+    LIMIT 1
+  ");
+  if ($rs2 && $r2 = $rs2->fetch_assoc()) $idCentral = (int)$r2['id'];
+}
+
+if ($idCentral <= 0) {
+  echo "<div class='container my-4'><div class='alert alert-danger shadow-sm'>No se encontró la sucursal de inventario central “{$CENTRAL_NAME}”. Verifica el catálogo de sucursales.</div></div>";
   exit();
 }
 
-// ===============================
-// 2) Procesar TRASPASO (POST)
-// ===============================
+/* ===============================
+   2) Procesar TRASPASO (POST)
+   =============================== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $equiposSeleccionados = isset($_POST['equipos']) && is_array($_POST['equipos']) ? $_POST['equipos'] : [];
   $idSucursalDestino    = (int)($_POST['sucursal_destino'] ?? 0);
@@ -53,9 +84,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                   No seleccionaste ningún equipo para traspasar.
                   <button type='button' class='btn-close' data-bs-dismiss='alert' aria-label='Cerrar'></button>
                 </div>";
-  } elseif ($idSucursalDestino === $idEulalia) {
+  } elseif ($idSucursalDestino === $idCentral) {
     $mensaje = "<div class='alert alert-warning alert-dismissible fade show shadow-sm' role='alert'>
-                  El destino no puede ser Eulalia.
+                  El destino no puede ser {$CENTRAL_NAME}.
                   <button type='button' class='btn-close' data-bs-dismiss='alert' aria-label='Cerrar'></button>
                 </div>";
   } else {
@@ -69,12 +100,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           INSERT INTO traspasos (id_sucursal_origen, id_sucursal_destino, usuario_creo, estatus)
           VALUES (?,?,?, 'Pendiente')
         ");
-        $stmt->bind_param("iii", $idEulalia, $idSucursalDestino, $idUsuario);
+        $stmt->bind_param("iii", $idCentral, $idSucursalDestino, $idUsuario);
         $stmt->execute();
         $idTraspaso = (int)$stmt->insert_id;
         $stmt->close();
 
-        // Validar que TODOS los inventarios sigan en Eulalia y 'Disponible'
+        // Validar que TODOS los inventarios sigan en Central y 'Disponible'
         $placeholders = implode(',', array_fill(0, count($idsInv), '?'));
         $typesIds = str_repeat('i', count($idsInv));
         $sqlVal = "
@@ -84,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ";
         $stmtVal = $conn->prepare($sqlVal);
         $typesFull = 'i' . $typesIds; // primero id_sucursal, luego lista de IDs
-        $stmtVal->bind_param($typesFull, $idEulalia, ...$idsInv);
+        $stmtVal->bind_param($typesFull, $idCentral, ...$idsInv);
         $stmtVal->execute();
         $rsVal = $stmtVal->get_result();
         $validos = [];
@@ -94,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (count($validos) !== count($idsInv)) {
           $conn->rollback();
           $mensaje = "<div class='alert alert-danger alert-dismissible fade show shadow-sm' role='alert'>
-                        Algunos equipos ya no están disponibles en Eulalia o cambiaron de estatus. Refresca e intenta de nuevo.
+                        Algunos equipos ya no están disponibles en {$CENTRAL_NAME} o cambiaron de estatus. Refresca e intenta de nuevo.
                         <button type='button' class='btn-close' data-bs-dismiss='alert' aria-label='Cerrar'></button>
                       </div>";
         } else {
@@ -106,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmtDet->bind_param("ii", $idTraspaso, $idInv);
             $stmtDet->execute();
 
-            $stmtUpd->bind_param("ii", $idInv, $idEulalia);
+            $stmtUpd->bind_param("ii", $idInv, $idCentral);
             $stmtUpd->execute();
             if ($stmtUpd->affected_rows !== 1) {
               throw new Exception("Fallo al actualizar inventario #$idInv");
@@ -121,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $acuseUrl   = "acuse_traspaso.php?id={$idTraspaso}&print=1";
           $acuseReady = true;
 
-          // Mensaje de éxito (solo informativo; el modal se abrirá solo)
+          // Mensaje de éxito
           $mensaje = "<div class='alert alert-success alert-dismissible fade show shadow-sm' role='alert'>
                         <i class='bi bi-check-circle me-1'></i>
                         <strong>Traspaso #{$idTraspaso}</strong> generado con éxito. Los equipos ahora están <b>En tránsito</b>.
@@ -140,9 +171,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 }
 
-// ===============================
-// 3) Inventario DISPONIBLE en Eulalia
-// ===============================
+/* ===============================
+   3) Inventario DISPONIBLE en Central
+   =============================== */
 $sql = "
 SELECT i.id, p.marca, p.modelo, p.color, p.imei1, p.imei2
 FROM inventario i
@@ -151,20 +182,20 @@ WHERE i.id_sucursal=? AND i.estatus='Disponible'
 ORDER BY i.fecha_ingreso ASC, i.id ASC
 ";
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("i", $idEulalia);
+$stmt->bind_param("i", $idCentral);
 $stmt->execute();
 $result = $stmt->get_result();
 $inventario = $result->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
-// ===============================
-// 4) Sucursales DESTINO (solo Tiendas; excluir Eulalia)
-// ===============================
+/* ===============================
+   4) Sucursales DESTINO (solo Tiendas; excluir Central)
+   =============================== */
 $sucursales = [];
 $resSuc = $conn->query("
   SELECT id, nombre
   FROM sucursales
-  WHERE LOWER(tipo_sucursal)='tienda' AND id <> {$idEulalia}
+  WHERE LOWER(tipo_sucursal)='tienda' AND id <> {$idCentral}
   ORDER BY nombre ASC
 ");
 while ($row = $resSuc->fetch_assoc()) $sucursales[] = $row;
@@ -173,7 +204,7 @@ while ($row = $resSuc->fetch_assoc()) $sucursales[] = $row;
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Generar Traspaso (Eulalia)</title>
+  <title>Generar Traspaso (<?php echo htmlspecialchars($CENTRAL_NAME); ?>)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <!-- Bootstrap / Icons -->
@@ -204,7 +235,6 @@ while ($row = $resSuc->fetch_assoc()) $sucursales[] = $row;
     .table code{ color:inherit; background:#f8fafc; padding:2px 6px; border-radius:6px; }
     .sticky-aside{ position:sticky; top:92px; }
 
-    /* Modal del acuse */
     .modal-xxl { max-width: 1200px; }
     #frameAcuse { width:100%; min-height:72vh; border:0; background:#fff; }
   </style>
@@ -219,7 +249,9 @@ while ($row = $resSuc->fetch_assoc()) $sucursales[] = $row;
     <div>
       <h1 class="h4 mb-1"><i class="bi bi-arrow-left-right me-2"></i>Generar traspaso</h1>
       <div class="muted">
-        <span class="badge rounded-pill text-bg-light border"><i class="bi bi-house-gear me-1"></i>Origen: Eulalia</span>
+        <span class="badge rounded-pill text-bg-light border">
+          <i class="bi bi-house-gear me-1"></i>Origen: <?php echo htmlspecialchars($CENTRAL_NAME); ?>
+        </span>
       </div>
     </div>
     <div class="d-flex gap-2">
@@ -279,7 +311,7 @@ while ($row = $resSuc->fetch_assoc()) $sucursales[] = $row;
               <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div class="d-flex align-items-center gap-2">
                   <i class="bi bi-box-seam text-primary"></i>
-                  <span><strong>Inventario disponible</strong> en Eulalia</span>
+                  <span><strong>Inventario disponible</strong> en <?php echo htmlspecialchars($CENTRAL_NAME); ?></span>
                 </div>
                 <div class="form-check">
                   <input class="form-check-input" type="checkbox" id="checkAll">
@@ -302,7 +334,7 @@ while ($row = $resSuc->fetch_assoc()) $sucursales[] = $row;
                   </thead>
                   <tbody>
                     <?php if (empty($inventario)): ?>
-                      <tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-inboxes me-1"></i>Sin equipos disponibles en Eulalia</td></tr>
+                      <tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-inboxes me-1"></i>Sin equipos disponibles en <?php echo htmlspecialchars($CENTRAL_NAME); ?></td></tr>
                     <?php else: foreach ($inventario as $row): ?>
                       <tr data-id="<?= (int)$row['id'] ?>">
                         <td class="text-center">
@@ -342,7 +374,7 @@ while ($row = $resSuc->fetch_assoc()) $sucursales[] = $row;
                     <div class="row g-3 mb-2">
                       <div class="col-md-4">
                         <div class="small text-uppercase text-muted">Origen</div>
-                        <div class="fw-semibold">Eulalia</div>
+                        <div class="fw-semibold"><?php echo htmlspecialchars($CENTRAL_NAME); ?></div>
                       </div>
                       <div class="col-md-4">
                         <div class="small text-uppercase text-muted">Destino</div>
