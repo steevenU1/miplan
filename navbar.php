@@ -1,5 +1,4 @@
 <?php
-// navbar.php — LUGA (compacto: textos de menús reducidos + sin carets en dropdowns)
 
 if (session_status() === PHP_SESSION_NONE) {
   session_start();
