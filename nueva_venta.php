@@ -78,6 +78,7 @@ foreach ($sucursales as $s) { $mapSuc[(int)$s['id']] = $s['nombre']; }
     .badge-soft{background:#eef2ff; color:#1e40af; border:1px solid #dbeafe;}
     .list-compact{margin:0; padding-left:1rem;}
     .list-compact li{margin-bottom:.25rem;}
+    .file-hint{font-size:.8rem; color:#475569;}
   </style>
 </head>
 <body class="bg-light">
@@ -109,7 +110,8 @@ foreach ($sucursales as $s) { $mapSuc[(int)$s['id']] = $s['nombre']; }
 
   <div id="errores" class="alert alert-danger d-none"></div>
 
-  <form method="POST" action="procesar_venta.php" id="form_venta" novalidate>
+  <!-- ⬇️ enctype para permitir archivos -->
+  <form method="POST" action="procesar_venta.php" id="form_venta" enctype="multipart/form-data" novalidate>
     <input type="hidden" name="id_usuario" value="<?= $id_usuario ?>">
 
     <div class="card card-elev mb-4">
@@ -160,6 +162,32 @@ foreach ($sucursales as $s) { $mapSuc[(int)$s['id']] = $s['nombre']; }
           <div class="col-md-4">
             <label class="form-label">Teléfono del Cliente</label>
             <input type="text" name="telefono_cliente" id="telefono_cliente" class="form-control" placeholder="10 dígitos">
+          </div>
+        </div>
+
+        <!-- 🆕 REFERENCIAS -->
+        <div class="row g-3 mb-2 mt-1">
+          <div class="col-12">
+            <div class="section-title"><i class="bi bi-journal-check"></i> Referencias</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" id="label_ref1n">Referencia 1 - Nombre</label>
+            <input type="text" name="referencia1_nombre" id="referencia1_nombre" class="form-control" placeholder="Nombre completo">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" id="label_ref1t">Referencia 1 - Teléfono</label>
+            <input type="text" name="referencia1_telefono" id="referencia1_telefono" class="form-control" placeholder="10 dígitos">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" id="label_ref2n">Referencia 2 - Nombre</label>
+            <input type="text" name="referencia2_nombre" id="referencia2_nombre" class="form-control" placeholder="Nombre completo">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" id="label_ref2t">Referencia 2 - Teléfono</label>
+            <input type="text" name="referencia2_telefono" id="referencia2_telefono" class="form-control" placeholder="10 dígitos">
+          </div>
+          <div class="col-12">
+            <div class="help-text">En <strong>Financiamiento</strong> estas referencias son obligatorias.</div>
           </div>
         </div>
 
@@ -229,6 +257,25 @@ foreach ($sucursales as $s) { $mapSuc[(int)$s['id']] = $s['nombre']; }
             <input type="text" name="comentarios" class="form-control" placeholder="Notas adicionales (opcional)">
           </div>
         </div>
+
+        <hr class="my-4">
+
+        <!-- 🆕 Identidad & Contrato -->
+        <div class="section-title"><i class="bi bi-file-earmark-image"></i> Identidad & Contrato</div>
+        <div class="row g-3 mb-2">
+          <div class="col-md-6">
+            <label class="form-label" id="label_identificacion">Imagen de Identificación</label>
+            <input class="form-control" type="file" name="identificacion" id="identificacion" accept="image/*">
+            <div class="file-hint">Formatos: JPG/PNG/WEBP. Máx 5 MB.</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" id="label_contrato">Contrato (PDF o Imagen)</label>
+            <input class="form-control" type="file" name="contrato" id="contrato" accept="application/pdf,image/*">
+            <div class="file-hint">PDF recomendado. Máx 5 MB.</div>
+          </div>
+        </div>
+        <div class="help-text">En <strong>Financiamiento</strong> estos archivos serán obligatorios.</div>
+
       </div>
       <div class="card-footer bg-white border-0 p-3">
         <button class="btn btn-gradient text-white w-100 py-2" id="btn_submit">
@@ -278,6 +325,13 @@ foreach ($sucursales as $s) { $mapSuc[(int)$s['id']] = $s['nombre']; }
                   <li class="d-none" id="li_financiera"><strong>Financiera:</strong> <span id="conf_financiera">—</span></li>
                   <li class="d-none" id="li_tag"><strong>TAG:</strong> <span id="conf_tag">—</span></li>
                 </ul>
+                <hr class="my-2">
+                <!-- 🆕 Resumen referencias y archivos -->
+                <ul class="list-compact">
+                  <li><strong>Refs:</strong> <span id="conf_refs">—</span></li>
+                  <li><strong>Identificación:</strong> <span id="conf_ident">—</span></li>
+                  <li><strong>Contrato:</strong> <span id="conf_contrato">—</span></li>
+                </ul>
               </div>
             </div>
           </div>
@@ -309,7 +363,26 @@ $(document).ready(function() {
   const mapaSucursales = <?= json_encode($mapSuc, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
   const modalConfirm = new bootstrap.Modal(document.getElementById('modalConfirmacion'));
 
-  // Select2 (sin matcher custom; el texto de la opción ya incluye IMEI2)
+  // Mostrar errores recibidos por GET (?err=...)
+  (function(){
+    const params = new URLSearchParams(window.location.search);
+    const errMsg = params.get('err');
+    if (errMsg) {
+      $('#errores').removeClass('d-none')
+        .html('<strong>Ups:</strong> ' + errMsg);
+      if (history.replaceState) {
+        const url = new URL(window.location);
+        url.searchParams.delete('err');
+        history.replaceState({}, '', url);
+      }
+    }
+  })();
+
+  // Helpers
+  const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+  const tel10 = v => /^\d{10}$/.test(v);
+
+  // Select2 (sin matcher custom)
   $('.select2-equipo').select2({
     placeholder: "Buscar por modelo, IMEI1 o IMEI2",
     allowClear: true,
@@ -318,13 +391,12 @@ $(document).ready(function() {
 
   $('#tipo_venta').on('change', function() {
     $('#combo').toggle(isFinanciamientoCombo());
-    // NUEVO: si se sale de Combo, limpiamos y desbloqueamos
     if (!isFinanciamientoCombo()) {
       $('#equipo2').val(null).trigger('change');
       $('#equipo1 option, #equipo2 option').prop('disabled', false);
     }
     toggleVenta();
-    refreshEquipoLocks(); // NUEVO
+    refreshEquipoLocks();
   });
 
   $('#forma_pago_enganche').on('change', function() {
@@ -339,6 +411,7 @@ $(document).ready(function() {
     return $('#tipo_venta').val() === 'Financiamiento+Combo';
   }
 
+  // 🔧 Ajusta obligatorios según tipo de venta (incluye referencias)
   function toggleVenta() {
     const esFin = isFinanciamiento();
     $('#tag_field, #enganche_field, #plazo_field, #financiera_field').toggle(esFin);
@@ -351,6 +424,11 @@ $(document).ready(function() {
     $('#enganche').prop('required', esFin);
     $('#plazo_semanas').prop('required', esFin);
     $('#financiera').prop('required', esFin);
+
+    // 🆕 referencias obligatorias solo en financiamiento (visual con .req)
+    $('#label_ref1n, #label_ref1t, #label_ref2n, #label_ref2t').toggleClass('req', esFin);
+    // 🆕 archivos obligatorios solo en financiamiento (visual; la validación real es manual)
+    $('#label_identificacion, #label_contrato').toggleClass('req', esFin);
 
     $('#precio_venta').prop('required', true);
     $('#forma_pago_enganche').prop('required', true);
@@ -366,26 +444,19 @@ $(document).ready(function() {
   }
   toggleVenta();
 
-  // ===== NUEVO: bloqueo cruzado para que equipo1 != equipo2 =====
+  // ===== bloqueo cruzado equipo1 != equipo2
   function refreshEquipoLocks() {
     const v1 = $('#equipo1').val();
     const v2 = $('#equipo2').val();
-
-    // Habilitamos todo y luego deshabilitamos la opción elegida en el otro select
     $('#equipo1 option, #equipo2 option').prop('disabled', false);
-
     if (v1) { $('#equipo2 option[value="'+v1+'"]').prop('disabled', true); }
     if (v2) { $('#equipo1 option[value="'+v2+'"]').prop('disabled', true); }
-
-    // Si quedaron iguales por cualquier razón, limpiamos el combo
     if (v1 && v2 && v1 === v2) {
       $('#equipo2').val(null).trigger('change');
     }
   }
 
   $('#equipo1, #equipo2').on('change', refreshEquipoLocks);
-
-  // Filtro extra para Select2: si eligen el mismo, lo revierte al instante
   $('#equipo2').on('select2:select', function(e){
     const v1 = $('#equipo1').val();
     const elegido = e.params.data.id;
@@ -396,6 +467,7 @@ $(document).ready(function() {
   });
   $('#equipo1').on('select2:select', function(){ refreshEquipoLocks(); });
 
+  // ⚠️ Cargar inventario por sucursal (tu versión que sí jalaba)
   function cargarEquipos(sucursalId) {
     $.ajax({
       url: 'ajax_productos_por_sucursal.php',
@@ -403,7 +475,7 @@ $(document).ready(function() {
       data: { id_sucursal: sucursalId },
       success: function(response) {
         $('#equipo1, #equipo2').html(response).val('').trigger('change');
-        refreshEquipoLocks(); // NUEVO: aplicar bloqueo tras recargar
+        refreshEquipoLocks();
       },
       error: function(xhr){
         const msg = xhr.responseText || 'Error cargando inventario';
@@ -424,6 +496,36 @@ $(document).ready(function() {
     }
     cargarEquipos(seleccionada);
   });
+
+  // ========= Validaciones extra: referencias y archivos =========
+  function validarReferencias(esFin, errores){
+    const r1n = $('#referencia1_nombre').val().trim();
+    const r1t = $('#referencia1_telefono').val().trim();
+    const r2n = $('#referencia2_nombre').val().trim();
+    const r2t = $('#referencia2_telefono').val().trim();
+
+    if (esFin) {
+      if (!r1n) errores.push('Referencia 1: ingresa el nombre.');
+      if (!tel10(r1t)) errores.push('Referencia 1: teléfono debe tener 10 dígitos.');
+      if (!r2n) errores.push('Referencia 2: ingresa el nombre.');
+      if (!tel10(r2t)) errores.push('Referencia 2: teléfono debe tener 10 dígitos.');
+    } else {
+      if (r1t && !tel10(r1t)) errores.push('Referencia 1: teléfono debe tener 10 dígitos.');
+      if (r2t && !tel10(r2t)) errores.push('Referencia 2: teléfono debe tener 10 dígitos.');
+    }
+  }
+
+  function validarArchivos(esFin, errores){
+    const idf = $('#identificacion')[0]?.files?.[0] || null;
+    const cto = $('#contrato')[0]?.files?.[0] || null;
+
+    if (esFin) {
+      if (!idf) errores.push('Sube la imagen de la identificación (obligatoria en financiamiento).');
+      if (!cto) errores.push('Sube el contrato en PDF o imagen (obligatorio en financiamiento).');
+    }
+    if (idf && idf.size > MAX_SIZE_BYTES) errores.push('La identificación excede 5 MB.');
+    if (cto && cto.size > MAX_SIZE_BYTES) errores.push('El contrato excede 5 MB.');
+  }
 
   // ========= Validación + modal =========
   let permitSubmit = false;
@@ -448,7 +550,7 @@ $(document).ready(function() {
     if (!forma) errores.push('Selecciona la forma de pago.');
     if (!$('#equipo1').val()) errores.push('Selecciona el equipo principal.');
 
-    // NUEVO: reglas para Financiamento+Combo
+    // Reglas para Financiamento+Combo
     if (isFinanciamientoCombo()) {
       const v1 = $('#equipo1').val();
       const v2 = $('#equipo2').val();
@@ -474,6 +576,10 @@ $(document).ready(function() {
     } else {
       if (tel && !/^\d{10}$/.test(tel)) errores.push('El teléfono debe tener 10 dígitos.');
     }
+
+    // 🆕 validaciones nuevas
+    validarReferencias(esFin, errores);
+    validarArchivos(esFin, errores);
 
     return errores;
   }
@@ -516,6 +622,21 @@ $(document).ready(function() {
     } else {
       $('#li_enganche, #li_financiera, #li_tag').addClass('d-none');
     }
+
+    // 🆕 Resumen referencias y archivos
+    const r1n = $('#referencia1_nombre').val().trim();
+    const r1t = $('#referencia1_telefono').val().trim();
+    const r2n = $('#referencia2_nombre').val().trim();
+    const r2t = $('#referencia2_telefono').val().trim();
+    const refs = [];
+    if (r1n || r1t) refs.push(`Ref1: ${r1n || '—'} (${r1t || '—'})`);
+    if (r2n || r2t) refs.push(`Ref2: ${r2n || '—'} (${r2t || '—'})`);
+    $('#conf_refs').text(refs.length ? refs.join(' | ') : '—');
+
+    const idf = $('#identificacion')[0]?.files?.[0]?.name || '—';
+    const cto = $('#contrato')[0]?.files?.[0]?.name || '—';
+    $('#conf_ident').text(idf);
+    $('#conf_contrato').text(cto);
   }
 
   $('#form_venta').on('submit', function(e){
@@ -545,7 +666,7 @@ $(document).ready(function() {
   // Inicial
   function initEquipos(){ cargarEquipos($('#id_sucursal').val()); }
   initEquipos();
-  refreshEquipoLocks(); // NUEVO
+  refreshEquipoLocks();
 });
 </script>
 

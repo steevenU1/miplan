@@ -1,0 +1,4 @@
+codigo_producto,marca,modelo,color,ram,capacidad,imei1,imei2,sucursal,estatus_final,motivo
+"TEL-XIA-RMI 14C-128GB-4R-NGO",XIAOMI,"REDMI 14C",NEGRO,4RAM,128GB,86991414,86991414,"MiPlan Almacen",Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-NGO",HONOR,"X5B PLUS",NEGRO,4RAM,256GB,86220814,86220814,"MiPlan Almacen",Insertada,OK
+TEL-HON-X6A-128GB-4R-CIA,HONOR,X6A,CIAN,4RAM,128GB,86040414,86040414,"MiPlan Almacen",Insertada,OK
