@@ -9,7 +9,7 @@ if (!isset($_SESSION['id_usuario'])) {
 include 'db.php';
 
 /* =========================================================
-   Helpers de compatibilidad de esquema
+   Helpers
 ========================================================= */
 function hasColumn(mysqli $conn, string $table, string $column): bool {
     $tableEsc  = $conn->real_escape_string($table);
@@ -26,6 +26,23 @@ function hasColumn(mysqli $conn, string $table, string $column): bool {
     return $res && $res->num_rows > 0;
 }
 
+/** Base del proyecto para cuando corre bajo subcarpeta (p.ej. /miplan) */
+function app_base_path(): string {
+    $script = $_SERVER['SCRIPT_NAME'] ?? '';
+    $dir = rtrim(str_replace('\\','/', dirname($script)), '/');
+    return ($dir === '/' ? '' : $dir);
+}
+
+/** Normaliza una ruta guardada (relativa o iniciando con “/uploads…”) a una URL navegable */
+function url_publica(?string $ruta): string {
+    $ruta = trim((string)$ruta);
+    if ($ruta === '') return '';
+    if (preg_match('#^https?://#i', $ruta)) return $ruta;       // ya es absoluta
+    $base = app_base_path();
+    if ($ruta[0] === '/') return $base . $ruta;                  // ej: /uploads/... -> /miplan/uploads/...
+    return $base . '/' . $ruta;                                  // ej: uploads/...
+}
+
 function obtenerSemanaPorIndice($offset = 0) {
     $hoy = new DateTime();
     $diaSemana = $hoy->format('N'); // 1=lunes ... 7=domingo
@@ -35,23 +52,22 @@ function obtenerSemanaPorIndice($offset = 0) {
     $inicio = new DateTime();
     $inicio->modify("-$dif days")->setTime(0,0,0);
 
-    if ($offset > 0) {
-        $inicio->modify("-" . (7*$offset) . " days");
-    }
+    if ($offset > 0) $inicio->modify("-" . (7*$offset) . " days");
 
     $fin = clone $inicio;
     $fin->modify("+6 days")->setTime(23,59,59);
-
     return [$inicio, $fin];
 }
 
-// Semana seleccionada (para filtros/listado)
+function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+
+/* =========================================================
+   Semana/filtros base
+========================================================= */
 $semanaSeleccionada = isset($_GET['semana']) ? (int)$_GET['semana'] : 0;
 list($inicioSemanaObj, $finSemanaObj) = obtenerSemanaPorIndice($semanaSeleccionada);
 $inicioSemana = $inicioSemanaObj->format('Y-m-d');
 $finSemana    = $finSemanaObj->format('Y-m-d');
-
-// Rango de la semana ACTUAL (para permitir edición)
 list($inicioActualObj, $finActualObj) = obtenerSemanaPorIndice(0);
 
 $msg              = $_GET['msg'] ?? '';
@@ -59,7 +75,9 @@ $id_sucursal      = (int)($_SESSION['id_sucursal'] ?? 0);
 $ROL              = $_SESSION['rol'] ?? '';
 $idUsuarioSesion  = (int)($_SESSION['id_usuario'] ?? 0);
 
-// Subtipo sucursal
+/* =========================================================
+   Subtipo sucursal
+========================================================= */
 $subtipoSucursal = '';
 if ($id_sucursal) {
     $stmtSubtipo = $conn->prepare("SELECT subtipo FROM sucursales WHERE id = ? LIMIT 1");
@@ -72,15 +90,12 @@ if ($id_sucursal) {
 $esSubdistribuidor = ($subtipoSucursal === 'Subdistribuidor');
 
 /* =========================================================
-   Detección del nombre de columna de tipo de producto
+   Detección columna tipo de producto
 ========================================================= */
 $colTipoProd = hasColumn($conn, 'productos', 'tipo') ? 'tipo' : 'tipo_producto';
 
 /* =========================================================
-   Usuarios para filtro:
-   - SIEMPRE activos de la sucursal
-   - INACTIVOS solo si tuvieron ventas en la semana seleccionada
-   Compat esquema: activo / estatus / fecha_baja
+   Usuarios para filtro (activos + inactivos con ventas)
 ========================================================= */
 $activosExpr = '';
 if (hasColumn($conn, 'usuarios', 'activo')) {
@@ -92,8 +107,7 @@ if (hasColumn($conn, 'usuarios', 'activo')) {
 }
 
 $existsVentas = "EXISTS (
-    SELECT 1
-    FROM ventas v
+    SELECT 1 FROM ventas v
     WHERE v.id_usuario = u.id
       AND DATE(v.fecha_venta) BETWEEN ? AND ?
 )";
@@ -103,60 +117,44 @@ $esInactivoCase = $activosExpr
     : "CASE WHEN {$existsVentas} THEN 1 ELSE 0 END";
 
 $sqlUsuarios = "
-    SELECT u.id, u.nombre,
-           {$esInactivoCase} AS es_inactivo
+    SELECT u.id, u.nombre, {$esInactivoCase} AS es_inactivo
     FROM usuarios u
     WHERE u.id_sucursal = ?
-      AND (
-            " . ($activosExpr ? "{$activosExpr} OR " : "") . "
-            {$existsVentas}
-          )
+      AND (" . ($activosExpr ? "{$activosExpr} OR " : "") . "{$existsVentas})
     ORDER BY es_inactivo ASC, u.nombre ASC
 ";
 $stmtUsuarios = $conn->prepare($sqlUsuarios);
 $stmtUsuarios->bind_param("iss", $id_sucursal, $inicioSemana, $finSemana);
 $stmtUsuarios->execute();
 $resUsuarios = $stmtUsuarios->get_result();
-
-$usuariosActivos = [];
-$usuariosInactivos = [];
+$usuariosActivos = $usuariosInactivos = [];
 while ($row = $resUsuarios->fetch_assoc()) {
-    if ((int)$row['es_inactivo'] === 1) {
-        $usuariosInactivos[] = $row;
-    } else {
-        $usuariosActivos[] = $row;
-    }
+    ((int)$row['es_inactivo'] === 1) ? $usuariosInactivos[] = $row : $usuariosActivos[] = $row;
 }
 $stmtUsuarios->close();
 
 /* =========================================================
-   WHERE base para consultas de ventas
+   WHERE base para ventas
 ========================================================= */
 $where  = " WHERE DATE(v.fecha_venta) BETWEEN ? AND ?";
 $params = [$inicioSemana, $finSemana];
 $types  = "ss";
 
-// Filtro por rol para el listado
 if ($ROL === 'Ejecutivo') {
     $where .= " AND v.id_usuario=?";
-    $params[] = $idUsuarioSesion;
-    $types .= "i";
+    $params[] = $idUsuarioSesion; $types .= "i";
 } elseif ($ROL === 'Gerente') {
     $where .= " AND v.id_sucursal=?";
-    $params[] = $id_sucursal;
-    $types .= "i";
+    $params[] = $id_sucursal;     $types .= "i";
 }
 
-// Filtros GET
 if (!empty($_GET['tipo_venta'])) {
     $where .= " AND v.tipo_venta=?";
-    $params[] = $_GET['tipo_venta'];
-    $types .= "s";
+    $params[] = $_GET['tipo_venta']; $types .= "s";
 }
 if (!empty($_GET['usuario'])) {
     $where .= " AND v.id_usuario=?";
-    $params[] = $_GET['usuario'];
-    $types .= "i";
+    $params[] = $_GET['usuario'];   $types .= "i";
 }
 if (!empty($_GET['buscar'])) {
     $where .= " AND (v.nombre_cliente LIKE ? OR v.telefono_cliente LIKE ? OR v.tag LIKE ?
@@ -167,14 +165,9 @@ if (!empty($_GET['buscar'])) {
 }
 
 /* =========================================================
-   MÉTRICAS PARA CARDS (ajustadas)
-   - Unidades (SIN módem/MiFi)
-   - Módems (unidades)
-   - Combos (unidades = 1 por venta F+Combo)
-   - Monto vendido (0 si venta solo tiene módem/MiFi)
+   Métricas
 ========================================================= */
-
-// Unidades sin módem y módems (detalle_venta)
+// Unidades / módems
 $sqlUnits = "
     SELECT
       SUM(CASE WHEN LOWER(COALESCE(p.$colTipoProd,'')) IN ('modem','mifi') THEN 0 ELSE 1 END) AS unidades_sin_modem,
@@ -188,23 +181,20 @@ $stU = $conn->prepare($sqlUnits);
 $stU->bind_param($types, ...$params);
 $stU->execute();
 $rowU = $stU->get_result()->fetch_assoc();
-$totalUnidades          = (int)($rowU['unidades_sin_modem'] ?? 0);
-$totalModemsUnidades    = (int)($rowU['unidades_modem'] ?? 0);
+$totalUnidades       = (int)($rowU['unidades_sin_modem'] ?? 0);
+$totalModemsUnidades = (int)($rowU['unidades_modem'] ?? 0);
 $stU->close();
 
-// Combos (1 unidad por venta Financiamiento+Combo)
-$sqlCombos = "
-  SELECT SUM(CASE WHEN LOWER(v.tipo_venta)='financiamiento+combo' THEN 1 ELSE 0 END) AS combos_u
-  FROM ventas v
-  $where
-";
+// Combos
+$sqlCombos = "SELECT SUM(CASE WHEN LOWER(v.tipo_venta)='financiamiento+combo' THEN 1 ELSE 0 END) AS combos_u
+              FROM ventas v $where";
 $stC = $conn->prepare($sqlCombos);
 $stC->bind_param($types, ...$params);
 $stC->execute();
 $totalCombosUnidades = (int)($stC->get_result()->fetch_assoc()['combos_u'] ?? 0);
 $stC->close();
 
-// Monto vendido excluyendo ventas solo-módem
+// Monto (excluye ventas solo-módem)
 $sqlMonto = "
   SELECT IFNULL(SUM(CASE WHEN d.has_non_modem=1 THEN v.precio_venta ELSE 0 END),0) AS total_monto
   FROM ventas v
@@ -223,7 +213,7 @@ $stM->execute();
 $totalMonto = (float)($stM->get_result()->fetch_assoc()['total_monto'] ?? 0);
 $stM->close();
 
-// Comisiones (igual que antes)
+// Comisiones
 $sqlResumen = "
     SELECT IFNULL(SUM(dv.comision_regular + dv.comision_especial),0) AS total_comisiones
     FROM detalle_venta dv
@@ -238,14 +228,14 @@ $totalComisiones = (float)($resumen['total_comisiones'] ?? 0);
 $stmtResumen->close();
 
 /* =========================================================
-   Datos del listado
+   Datos del listado (incluye rutas de docs)
 ========================================================= */
-// Ventas (con enganche y comentarios)
 $sqlVentas = "
     SELECT v.id, v.tag, v.nombre_cliente, v.telefono_cliente, v.tipo_venta,
            v.precio_venta, v.fecha_venta,
            v.enganche, v.forma_pago_enganche, v.enganche_efectivo, v.enganche_tarjeta,
            v.comentarios,
+           v.imagen_identificacion, v.imagen_contrato,
            u.id AS id_usuario, u.nombre AS usuario
     FROM ventas v
     INNER JOIN usuarios u ON v.id_usuario = u.id
@@ -272,8 +262,6 @@ $detalles = [];
 while ($row = $detalleResult->fetch_assoc()) {
     $detalles[$row['id_venta']][] = $row;
 }
-
-function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 ?>
 <!DOCTYPE html>
 <html lang="es" data-bs-theme="light">
@@ -303,6 +291,7 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
     .venta-head .tag{ font-weight:700; }
     .sticky-tools{ position:sticky; top:0; z-index:2; background:var(--surface); }
     .comentarios-box{ background:#fffdf6; border:1px dashed #ffdca8; border-radius:12px; padding:.6rem .8rem; color:#7a591f; }
+    .doc-frame{ width:100%; height:70vh; border:0; }
   </style>
 </head>
 <body>
@@ -469,22 +458,23 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
     <div class="accordion mt-3" id="ventasAccordion">
       <?php $idx = 0; while ($venta = $ventas->fetch_assoc()): $idx++; ?>
         <?php
-          // Permisos y ventana actual
           $esPropia = ((int)$venta['id_usuario'] === $idUsuarioSesion);
-
           $fechaVentaDT = new DateTime($venta['fecha_venta']);
           $enSemanaActual = ($fechaVentaDT >= $inicioActualObj && $fechaVentaDT <= $finActualObj);
-
-          $puedeEliminar = ($ROL === 'Admin'); // eliminar solo admin
+          $puedeEliminar = ($ROL === 'Admin');
           $puedeEditar   = (in_array($ROL, ['Ejecutivo','Gerente']) && $esPropia && $enSemanaActual);
 
-          // icono tipo
           $chipIcon = 'bi-tag';
           if ($venta['tipo_venta'] === 'Contado') $chipIcon = 'bi-cash-coin';
           elseif ($venta['tipo_venta'] === 'Financiamiento') $chipIcon = 'bi-bank';
           elseif ($venta['tipo_venta'] === 'Financiamiento+Combo') $chipIcon = 'bi-box-seam';
 
           $accId = "venta".$idx;
+
+          $urlIdent = url_publica($venta['imagen_identificacion'] ?? '');
+          $urlCto   = url_publica($venta['imagen_contrato'] ?? '');
+          $extCto   = strtolower(pathinfo($urlCto ?: '', PATHINFO_EXTENSION));
+          $tipoCto  = ($extCto === 'pdf') ? 'pdf' : 'img';
         ?>
         <div class="accordion-item card-surface mb-2">
           <h2 class="accordion-header" id="h<?= $accId ?>">
@@ -513,6 +503,32 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
             <div class="accordion-body">
 
               <div class="d-flex justify-content-end gap-2 mb-2">
+                <?php if ($urlIdent): ?>
+                  <button
+                    class="btn btn-outline-secondary btn-sm btn-ver-doc"
+                    data-bs-toggle="modal"
+                    data-bs-target="#docModal"
+                    data-url="<?= h($urlIdent) ?>"
+                    data-titulo="Identificación · Venta #<?= (int)$venta['id'] ?>"
+                    data-tipo="img"
+                  >
+                    <i class="bi bi-image"></i> Ver Identificación
+                  </button>
+                <?php endif; ?>
+
+                <?php if ($urlCto): ?>
+                  <button
+                    class="btn btn-outline-secondary btn-sm btn-ver-doc"
+                    data-bs-toggle="modal"
+                    data-bs-target="#docModal"
+                    data-url="<?= h($urlCto) ?>"
+                    data-titulo="Contrato · Venta #<?= (int)$venta['id'] ?>"
+                    data-tipo="<?= h($tipoCto) ?>"
+                  >
+                    <i class="bi <?= $tipoCto==='pdf' ? 'bi-filetype-pdf' : 'bi-file-image' ?>"></i> Ver Contrato
+                  </button>
+                <?php endif; ?>
+
                 <?php if ($puedeEditar): ?>
                   <button 
                     class="btn btn-outline-primary btn-sm btn-edit-venta"
@@ -613,7 +629,25 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
 </div>
 
-<!-- Modal: Editar venta (Ejecutivo/Gerente solo propias y semana actual) -->
+<!-- Modal visor de documentos -->
+<div class="modal fade" id="docModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="docModalTitle">Documento</h5>
+        <a class="btn btn-outline-secondary btn-sm" id="docModalOpen" target="_blank" rel="noopener">
+          <i class="bi bi-box-arrow-up-right"></i> Abrir en pestaña
+        </a>
+        <button type="button" class="btn-close ms-2" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body" id="docModalBody">
+        <!-- aquí se inyecta <img> o <iframe> -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Editar venta -->
 <div class="modal fade" id="editarVentaModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <form action="editar_venta.php" method="POST" class="modal-content">
@@ -678,7 +712,7 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
       <div class="modal-body">
         <input type="hidden" name="id_venta" id="modalIdVenta">
         <p class="mb-0">¿Seguro que deseas eliminar esta venta? <br>
-        <small class="text-muted">Esto devolverá los equipos al inventario y quitará la comisión.</small></p>
+        <small class="text-muted">Esto devolverá los equipos al inventario, quitará la comisión y borrará su documentación.</small></p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -688,7 +722,7 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
   </div>
 </div>
 
-<!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script> -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 // Modal eliminar (Admin)
 const modalDel = document.getElementById('confirmEliminarModal');
@@ -701,7 +735,6 @@ if (modalDel) {
 }
 
 // Modal editar (Ejecutivo/Gerente propios)
-// TAG requerido solo si tipo != 'Contado'
 document.querySelectorAll('.btn-edit-venta').forEach(btn => {
   btn.addEventListener('click', () => {
     document.getElementById('ev_id_venta').value = btn.dataset.id || '';
@@ -721,6 +754,34 @@ document.querySelectorAll('.btn-edit-venta').forEach(btn => {
       ? 'Obligatorio para Financiamiento / Financiamiento+Combo.'
       : 'Opcional en ventas de Contado.';
   });
+});
+
+// Modal visor de documentos (identificación/contrato)
+const docModal = document.getElementById('docModal');
+docModal?.addEventListener('show.bs.modal', (ev) => {
+  const btn = ev.relatedTarget;
+  const url = btn?.getAttribute('data-url') || '';
+  const titulo = btn?.getAttribute('data-titulo') || 'Documento';
+  const tipo = btn?.getAttribute('data-tipo') || 'img';
+
+  document.getElementById('docModalTitle').textContent = titulo;
+  const open = document.getElementById('docModalOpen');
+  open.href = url;
+
+  const body = document.getElementById('docModalBody');
+  body.innerHTML = '';
+  if (tipo === 'pdf') {
+    const iframe = document.createElement('iframe');
+    iframe.src = url + '#toolbar=0&view=FitH';
+    iframe.className = 'doc-frame';
+    body.appendChild(iframe);
+  } else {
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = titulo;
+    img.className = 'img-fluid';
+    body.appendChild(img);
+  }
 });
 </script>
 </body>

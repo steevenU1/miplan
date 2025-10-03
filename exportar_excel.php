@@ -46,6 +46,17 @@ function semana_martes_lunes($offset=0){
   $fin=(clone $ini)->modify('+6 days')->setTime(23,59,59);
   return [$ini->format('Y-m-d'),$fin->format('Y-m-d')];
 }
+/* ¿Existe columna? (para compatibilidad) */
+function hasColumn(mysqli $conn, string $table, string $column): bool {
+  $t = $conn->real_escape_string($table);
+  $c = $conn->real_escape_string($column);
+  $sql = "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME   = '{$t}'
+            AND COLUMN_NAME  = '{$c}' LIMIT 1";
+  $res = $conn->query($sql);
+  return $res && $res->num_rows > 0;
+}
 
 /* ========= Filtros (idénticos a la vista) ========= */
 $rol   = $_SESSION['rol'] ?? '';
@@ -71,7 +82,20 @@ if (!empty($_GET['buscar'])) {
   array_push($params,$q,$q,$q,$q); $types.="ssss";
 }
 
-/* ========= Consulta: agrega ROW_NUMBER para imprimir precio_venta solo en 1 fila ========= */
+/* ========= Select dinámico para Referencias (compat si faltan columnas) ========= */
+$hasR1N = hasColumn($conn,'ventas','referencia1_nombre');
+$hasR1T = hasColumn($conn,'ventas','referencia1_telefono');
+$hasR2N = hasColumn($conn,'ventas','referencia2_nombre');
+$hasR2T = hasColumn($conn,'ventas','referencia2_telefono');
+
+$selectRefs = implode(",\n  ", [
+  $hasR1N ? "v.referencia1_nombre AS referencia1_nombre" : "'' AS referencia1_nombre",
+  $hasR1T ? "v.referencia1_telefono AS referencia1_telefono" : "'' AS referencia1_telefono",
+  $hasR2N ? "v.referencia2_nombre AS referencia2_nombre" : "'' AS referencia2_nombre",
+  $hasR2T ? "v.referencia2_telefono AS referencia2_telefono" : "'' AS referencia2_telefono",
+]);
+
+/* ========= Consulta: agrega ROW_NUMBER para imprimir precio_venta/refs solo en 1 fila ========= */
 $sql = "
 SELECT
   v.id AS id_venta, v.fecha_venta, v.tag, v.nombre_cliente, v.telefono_cliente,
@@ -79,6 +103,8 @@ SELECT
   v.tipo_venta, v.precio_venta, v.comision AS comision_venta,
   v.enganche, v.forma_pago_enganche, v.enganche_efectivo, v.enganche_tarjeta,
   v.comentarios,
+
+  {$selectRefs},
 
   p.marca, p.modelo, p.color,
 
@@ -156,25 +182,36 @@ echo "<table border='1'><thead><tr style='background:#f2f2f2'>
   <th>Tipo Venta</th><th>Precio Venta</th><th>Comisión Total Venta</th>
   <th>Enganche</th><th>Forma Enganche</th><th>Enganche Efectivo</th><th>Enganche Tarjeta</th>
   <th>Comentarios</th>
+  <th>Ref1 Nombre</th><th>Ref1 Teléfono</th><th>Ref2 Nombre</th><th>Ref2 Teléfono</th>
   <th>Marca</th><th>Modelo</th><th>Color</th>
   <th>Código</th><th>Descripción</th><th>Nombre comercial</th>
   <th>IMEI</th><th>Comisión Regular</th><th>Comisión Especial</th><th>Total Comisión Equipo</th>
 </tr></thead><tbody>";
 
 while ($r = $res->fetch_assoc()) {
+  // Excel como texto (evitar pérdida de 0s/precisión)
   $imei = ($r['imei1']!==null && $r['imei1']!=='') ? '="'.e($r['imei1']).'"' : '';
 
-  // Mostrar precio_venta solo en la PRIMERA fila de cada venta (rn=1)
-  $precioVenta = ($r['rn'] == 1)
-      ? e($r['precio_venta'])
-      : '';
+  // Mostrar solo en PRIMERA fila por venta
+  $soloPrimera = ($r['rn'] == 1);
+
+  $precioVenta = $soloPrimera ? e($r['precio_venta']) : '';
+
+  // Teléfonos como texto para Excel
+  $telCliente = $soloPrimera && $r['telefono_cliente'] !== null && $r['telefono_cliente'] !== ''
+      ? '="'.e($r['telefono_cliente']).'"' : '';
+
+  $ref1Nombre = $soloPrimera ? e($r['referencia1_nombre']) : '';
+  $ref1Tel    = $soloPrimera && $r['referencia1_telefono'] !== '' ? '="'.e($r['referencia1_telefono']).'"' : '';
+  $ref2Nombre = $soloPrimera ? e($r['referencia2_nombre']) : '';
+  $ref2Tel    = $soloPrimera && $r['referencia2_telefono'] !== '' ? '="'.e($r['referencia2_telefono']).'"' : '';
 
   echo "<tr>
     <td>".e($r['id_venta'])."</td>
     <td>".e($r['fecha_venta'])."</td>
     <td>".e($r['tag'])."</td>
     <td>".e($r['nombre_cliente'])."</td>
-    <td>".e($r['telefono_cliente'])."</td>
+    <td>{$telCliente}</td>
     <td>".e($r['sucursal'])."</td>
     <td>".e($r['usuario'])."</td>
     <td>".e($r['tipo_venta'])."</td>
@@ -185,6 +222,12 @@ while ($r = $res->fetch_assoc()) {
     <td>".e($r['enganche_efectivo'])."</td>
     <td>".e($r['enganche_tarjeta'])."</td>
     <td>".e($r['comentarios'])."</td>
+
+    <td>{$ref1Nombre}</td>
+    <td>{$ref1Tel}</td>
+    <td>{$ref2Nombre}</td>
+    <td>{$ref2Tel}</td>
+
     <td>".e($r['marca'])."</td>
     <td>".e($r['modelo'])."</td>
     <td>".e($r['color'])."</td>
