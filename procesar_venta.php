@@ -15,6 +15,9 @@ require_once __DIR__ . '/db.php';
 ======================== */
 const GERENTE_COMISION_REGULAR_CAPTURA = 25.0;
 
+/* 🆕 Financieras permitidas (deben coincidir con el ENUM de la BD) */
+const FINANCIERAS_VALIDAS = ['PayJoy','Krediya','MSI','Visa','PlataCard','Aplazo'];
+
 /* === BASE_DIR fijo a la carpeta uploads junto a este archivo === */
 function fixed_uploads_base_dir(): string {
   $base = __DIR__ . '/uploads';              // <- AQUÍ anclamos
@@ -350,6 +353,17 @@ if ($precio_venta <= 0)     $errores[] = "El precio de venta debe ser mayor a 0.
 if (!$forma_pago_enganche)  $errores[] = "Selecciona la forma de pago.";
 if ($equipo1 <= 0)          $errores[] = "Selecciona el equipo principal.";
 
+/* 🆕 Normalización/validación de financiera para evitar errores de ENUM */
+if ($esFin) {
+  // Si viene cualquier cosa rara o vacía, marcar error
+  if ($financiera === '' || !in_array($financiera, FINANCIERAS_VALIDAS, true)) {
+    $errores[] = "Selecciona una financiera válida (PayJoy, Krediya, MSI, Visa, PlataCard o Aplazo).";
+  }
+} else {
+  // Contado: forzamos exactamente 'N/A' (debe existir en el ENUM)
+  $financiera = 'N/A';
+}
+
 // Reglas para Financiamiento / Combo
 if ($esFin) {
   if ($nombre_cliente === '')                     $errores[] = "Nombre del cliente es obligatorio.";
@@ -357,7 +371,6 @@ if ($esFin) {
   if ($tag === '')                                $errores[] = "TAG (ID del crédito) es obligatorio.";
   if ($enganche < 0)                              $errores[] = "El enganche no puede ser negativo (puede ser 0).";
   if ($plazo_semanas <= 0)                        $errores[] = "El plazo en semanas debe ser mayor a 0.";
-  if ($financiera === '')                         $errores[] = "Selecciona una financiera (no puede ser N/A).";
 
   if ($forma_pago_enganche === 'Mixto') {
     if ($enganche_efectivo <= 0 && $enganche_tarjeta <= 0) $errores[] = "En pago Mixto, al menos uno de los montos debe ser > 0.";
@@ -381,7 +394,6 @@ if ($esFin) {
   // Contado
   $tag = '';
   $plazo_semanas = 0;
-  $financiera = 'N/A';
   $enganche_efectivo = 0;
   $enganche_tarjeta  = 0;
 
