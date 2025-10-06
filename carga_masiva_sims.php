@@ -16,15 +16,18 @@ $msg = '';
 $previewRows = [];
 $contador = ['total' => 0, 'ok' => 0, 'ignoradas' => 0];
 
-// ID sucursal Eulalia (almacén)
-$idEulalia = 0;
-$resEulalia = $conn->query("SELECT id FROM sucursales WHERE nombre='Eulalia' LIMIT 1");
-if ($resEulalia && $rowE = $resEulalia->fetch_assoc()) {
-    $idEulalia = (int)$rowE['id'];
+// ========= Helpers =========
+function columnAllowsNull(mysqli $conn, string $table, string $column): bool {
+    $t = $conn->real_escape_string($table);
+    $c = $conn->real_escape_string($column);
+    $sql = "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='$t' AND COLUMN_NAME='$c' LIMIT 1";
+    $rs  = $conn->query($sql);
+    if (!$rs) return false;
+    $row = $rs->fetch_assoc();
+    return isset($row['IS_NULLABLE']) && strtoupper($row['IS_NULLABLE']) === 'YES';
 }
 
-// Cache de búsqueda de sucursal
-$sucursalCache = [];
 function getSucursalIdPorNombre(mysqli $conn, string $nombre, array &$cache): int {
     $nombre = trim($nombre);
     if ($nombre === '') return 0;
@@ -67,6 +70,21 @@ function normalizarOperador(string $opRaw): array {
     return [$opRaw, false];
 }
 
+// ========= Descubrimientos iniciales =========
+
+// ID sucursal Eulalia (almacén)
+$idEulalia = 0;
+$resEulalia = $conn->query("SELECT id FROM sucursales WHERE nombre='Eulalia' LIMIT 1");
+if ($resEulalia && $rowE = $resEulalia->fetch_assoc()) {
+    $idEulalia = (int)$rowE['id'];
+}
+
+// ¿La columna inventario_sims.dn permite NULL?
+$dnPermiteNull = columnAllowsNull($conn, 'inventario_sims', 'dn');
+
+// Cache de búsqueda de sucursal
+$sucursalCache = [];
+
 // ========= PREVIEW =========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'preview' && isset($_FILES['archivo_csv'])) {
     if ($_FILES['archivo_csv']['error'] !== UPLOAD_ERR_OK) {
@@ -89,7 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'previ
                     $fila = 0;
                     while (($data = fgetcsv($fh, 0, ",")) !== false) {
                         $fila++;
-                        if ($fila === 1) continue;
+                        if ($fila === 1) continue; // header
                         $iccid = trim($data[0] ?? '');
                         $dn = trim($data[1] ?? '');
                         $caja = trim($data[2] ?? '');
@@ -97,6 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'previ
                         $operadorRaw = trim($data[4] ?? '');
                         $id_sucursal = $nombre_sucursal === '' ? $idEulalia : getSucursalIdPorNombre($conn, $nombre_sucursal, $sucursalCache);
                         [$operador, $opValido] = normalizarOperador($operadorRaw);
+
                         $estatus = 'OK'; $motivo = 'Listo para insertar';
                         if ($iccid === '') { $estatus='Ignorada'; $motivo='ICCID vacío'; }
                         elseif ($id_sucursal === 0) { $estatus='Ignorada'; $motivo='Sucursal no encontrada'; }
@@ -108,6 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'previ
                             if ($stmtDup->num_rows > 0) { $estatus='Ignorada'; $motivo='Duplicado en base'; }
                             $stmtDup->close();
                         }
+
                         $contador['total']++;
                         if ($estatus === 'OK') $contador['ok']++; else $contador['ignoradas']++;
                         if (count($previewRows) < PREVIEW_LIMIT) {
@@ -115,7 +135,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'previ
                         }
                     }
                     fclose($fh);
-                } else $msg = "❌ No se pudo abrir el archivo.";
+                } else {
+                    $msg = "❌ No se pudo abrir el archivo.";
+                }
             }
         }
     }
@@ -147,29 +169,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'inser
     while (($data = fgetcsv($fh, 0, ",")) !== false) {
         $fila++; if ($fila === 1) continue;
         $iccid = trim($data[0] ?? '');
-        $dn = trim($data[1] ?? '');
-        $caja = trim($data[2] ?? '');
+        $dn    = trim($data[1] ?? '');
+        $caja  = trim($data[2] ?? '');
         $nombre_sucursal = trim($data[3] ?? '');
-        $operadorRaw = trim($data[4] ?? '');
+        $operadorRaw     = trim($data[4] ?? '');
+
         $id_sucursal = $nombre_sucursal === '' ? $idEulalia : getSucursalIdPorNombre($conn, $nombre_sucursal, $sucursalCache);
         [$operador, $opValido] = normalizarOperador($operadorRaw);
+
         $estatusFinal='Ignorada'; $motivo='N/A';
+
         if ($iccid===''){ $motivo='ICCID vacío'; }
         elseif ($id_sucursal===0){ $motivo='Sucursal no encontrada'; }
         elseif (!$opValido){ $motivo='Operador inválido'; }
         else {
             $stmtDup=$conn->prepare("SELECT id FROM inventario_sims WHERE iccid=? LIMIT 1");
             $stmtDup->bind_param("s",$iccid);
-            $stmtDup->execute();$stmtDup->store_result();
-            if($stmtDup->num_rows>0){$motivo='Duplicado';}
-            else{
-                $stmtInsert->bind_param("sssis",$iccid,$dn,$caja,$id_sucursal,$operador);
-                if($stmtInsert->execute()){$estatusFinal='Insertada';$motivo='OK';}
-                else{$motivo='Error inserción';}
+            $stmtDup->execute(); $stmtDup->store_result();
+
+            if($stmtDup->num_rows>0){
+                $motivo='Duplicado';
+            } else {
+                // DN vacío -> NULL si la columna lo permite; en caso contrario, cadena vacía
+                $dnParam = ($dn === '') ? ($dnPermiteNull ? null : '') : $dn;
+
+                // Tipos: iccid(s), dn(s), caja(s), id_sucursal(i), operador(s)
+                $stmtInsert->bind_param("sssis", $iccid, $dnParam, $caja, $id_sucursal, $operador);
+
+                if($stmtInsert->execute()){
+                    $estatusFinal='Insertada'; $motivo='OK';
+                } else {
+                    $motivo='Error inserción';
+                }
             }
             $stmtDup->close();
         }
-        fputcsv($out,[$iccid,$dn,$caja,$nombre_sucursal,$operador,$estatusFinal,$motivo]);
+
+        fputcsv($out, [$iccid,$dn,$caja,$nombre_sucursal,$operador,$estatusFinal,$motivo]);
     }
     fclose($fh); fclose($out);
     @unlink($tmpPath);
@@ -187,7 +223,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'inser
 <body class="bg-light">
 
 <?php include __DIR__ . '/navbar.php'; ?>
-<div style="height:70px"></div> <!-- 🆕 offset para navbar fixed -->
+<div style="height:70px"></div> <!-- offset para navbar fixed -->
 
 <div class="container mt-4">
     <h2>Carga Masiva de SIMs</h2>
@@ -198,7 +234,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'inser
     <?php if (!isset($_POST['action']) || ($_POST['action'] ?? '') === ''): ?>
         <div class="card p-4 shadow-sm bg-white">
             <h5>Subir Archivo CSV</h5>
-            <p>Columnas: <b>iccid, dn, caja_id, sucursal, operador</b>.<br>
+            <p>
+               Columnas: <b>iccid, dn, caja_id, sucursal, operador</b>.<br>
+               <b>dn</b> (opcional)<br>
                Si <b>sucursal</b> está vacía, se asigna <b>Eulalia</b>.<br>
                Si <b>operador</b> está vacío, se usa <b>Bait</b>.<br>
                Permitidos: <b>Bait, AT&amp;T, Virgin, Unefon, Telcel, Movistar</b>.
@@ -244,14 +282,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'inser
                 <a href="carga_masiva_sims.php" class="btn btn-outline-secondary">Cancelar</a>
             </form>
             <script>
-            const chk=document.getElementById('confirm_ok'),word=document.querySelector('[name=confirm_word]'),btn=document.getElementById('btnConfirm');
-            function toggle(){btn.disabled=!(chk.checked&&word.value.trim()==='CARGAR');}
-            chk.onchange=toggle;word.oninput=toggle;toggle();
+            const chk=document.getElementById('confirm_ok'),
+                  word=document.querySelector('[name=confirm_word]'),
+                  btn=document.getElementById('btnConfirm');
+            function toggle(){btn.disabled=!(chk.checked && word.value.trim()==='CARGAR');}
+            chk.onchange=toggle; word.oninput=toggle; toggle();
             </script>
         </div>
     <?php endif; ?>
 </div>
 
-<!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script> -->
 </body>
 </html>
