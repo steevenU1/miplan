@@ -205,18 +205,19 @@ $grpVentas     = [
   'nueva_venta.php',
   'venta_sim_prepago.php',
   'venta_sim_pospago.php',
-  'payjoy_tc_nueva.php',        // ✅ NUEVO
+  'payjoy_tc_nueva.php',
+  'nueva_venta_accesorio.php',      // ✅ nuevo
   'historial_ventas.php',
   'historial_ventas_sims.php',
-  'historial_payjoy_tc.php'     // ✅ NUEVO
+  'historial_payjoy_tc.php',
+  'historial_ventas_accesorios.php' // ✅ nuevo
 ];
-$grpInventario = ['panel.php', 'inventario_subdistribuidor.php', 'inventario_global.php', 'inventario_resumen.php', 'inventario_eulalia.php', 'inventario_retiros.php', 'inventario_historico.php', 'generar_traspaso_zona.php', 'traspasos_pendientes_zona.php', 'inventario_sims_resumen.php'];
+$grpInventario = ['panel.php', 'inventario_subdistribuidor.php', 'inventario_global.php', 'inventario_resumen.php', 'inventario_eulalia.php', 'inventario_retiros.php', 'generar_traspaso_zona.php', 'traspasos_pendientes_zona.php', 'inventario_sims_resumen.php'];
 $grpCompras    = ['compras_nueva.php', 'compras_resumen.php', 'modelos.php', 'proveedores.php', 'compras_ingreso.php'];
 $grpTraspasos  = ['generar_traspaso.php', 'generar_traspaso_sims.php', 'traspasos_sims_pendientes.php', 'traspasos_sims_salientes.php', 'traspasos_pendientes.php', 'traspasos_salientes.php', 'traspaso_nuevo.php'];
 $grpEfectivo   = ['cobros.php', 'cortes_caja.php', 'generar_corte.php', 'depositos_sucursal.php', 'depositos.php', 'recoleccion_comisiones.php'];
 $grpOperacion  = ['lista_precios.php', 'prospectos.php', 'insumos_pedido.php', 'insumos_admin.php', 'mantenimiento_solicitar.php', 'mantenimiento_admin.php', 'gestionar_usuarios.php', 'zona_asistencias.php', 'nomina_mi_semana.php'];
 $grpRH         = ['reporte_nomina.php', 'reporte_nomina_gerentes_zona.php', 'admin_expedientes.php', 'admin_asistencias.php', 'productividad_ejecutivo.php'];
-/* ✅ Incluimos tareas.php al grupo Operativos para resaltar activo */
 $grpOperativos = [
   'tareas.php', // NEW
   'insumos_catalogo.php',
@@ -235,7 +236,6 @@ $grpOperativos = [
   'alta_sucursal.php',
   'incidencias_matriz.php'
 ];
-$grpCeleb      = ['cumples_aniversarios.php'];
 
 function parent_active(array $g, string $c): bool
 {
@@ -646,7 +646,12 @@ function item_active(string $f, string $c): string
           </a>
           <ul class="dropdown-menu">
             <?php if ($rolUsuario === 'Logistica'): ?>
-              <!-- Solo historiales para Logística -->
+              <!-- Logística: accesos de accesorios y todos los historiales -->
+              <li class="dropdown-header">Accesorios</li>
+              <li><a class="dropdown-item <?= item_active('nueva_venta_accesorio.php', $current) ?>" href="nueva_venta_accesorio.php">Venta accesorios</a></li>
+              <li><a class="dropdown-item <?= item_active('historial_ventas_accesorios.php', $current) ?>" href="historial_ventas_accesorios.php">Historial ventas accesorios</a></li>
+
+              <li><hr class="dropdown-divider"></li>
               <li class="dropdown-header">Historiales</li>
               <li><a class="dropdown-item <?= item_active('historial_ventas.php', $current) ?>" href="historial_ventas.php">Historial de ventas</a></li>
               <li><a class="dropdown-item <?= item_active('historial_ventas_sims.php', $current) ?>" href="historial_ventas_sims.php">Historial ventas SIM</a></li>
@@ -659,6 +664,7 @@ function item_active(string $f, string $c): string
               <li><a class="dropdown-item <?= item_active('venta_sim_prepago.php', $current) ?>" href="venta_sim_prepago.php">Venta SIM prepago</a></li>
               <li><a class="dropdown-item <?= item_active('venta_sim_pospago.php', $current) ?>" href="venta_sim_pospago.php">Venta SIM pospago</a></li>
               <li><a class="dropdown-item <?= item_active('payjoy_tc_nueva.php', $current) ?>" href="payjoy_tc_nueva.php">PayJoy TC – Nueva</a></li>
+              <li><a class="dropdown-item <?= item_active('nueva_venta_accesorio.php', $current) ?>" href="nueva_venta_accesorio.php">Venta accesorios</a></li>
 
               <li>
                 <hr class="dropdown-divider">
@@ -669,6 +675,7 @@ function item_active(string $f, string $c): string
               <li><a class="dropdown-item <?= item_active('historial_ventas.php', $current) ?>" href="historial_ventas.php">Historial de ventas</a></li>
               <li><a class="dropdown-item <?= item_active('historial_ventas_sims.php', $current) ?>" href="historial_ventas_sims.php">Historial ventas SIM</a></li>
               <li><a class="dropdown-item <?= item_active('historial_payjoy_tc.php', $current) ?>" href="historial_payjoy_tc.php">Historial PayJoy TC</a></li>
+              <li><a class="dropdown-item <?= item_active('historial_ventas_accesorios.php', $current) ?>" href="historial_ventas_accesorios.php">Historial ventas accesorios</a></li>
             <?php endif; ?>
           </ul>
         </li>
@@ -693,9 +700,9 @@ function item_active(string $f, string $c): string
                 <li><a class="dropdown-item <?= item_active('inventario_global.php', $current) ?>" href="inventario_global.php">Inventario global</a></li>
               <?php endif; ?>
 
-              <!-- ✅ NUEVO: SIMs (Resumen) SOLO para Gerente y Admin -->
+              <!-- ✅ SIMs (Resumen) SOLO para Gerente y Admin -->
               <?php if (in_array($rolUsuario, ['Gerente', 'Admin'], true)): ?>
-                <li><a class="dropdown-item <?= item_active('inventario_resumen_sim.php', $current) ?>" href="inventario_sims_resumen.php">Invenario SIMs</a></li>
+                <li><a class="dropdown-item <?= item_active('inventario_sims_resumen.php', $current) ?>" href="inventario_sims_resumen.php">Inventario SIMs</a></li>
               <?php endif; ?>
 
               <?php if ($rolUsuario === 'GerenteZona'): ?>
@@ -957,7 +964,7 @@ function item_active(string $f, string $c): string
         <?php endif; ?>
 
         <?php if ($rolUsuario !== 'Logistica'): ?>
-          <?php $pActive = parent_active(array_merge($grpCeleb, ['cuadro_honor.php']), $current); ?>
+          <?php $pActive = parent_active(array_merge(['cumples_aniversarios.php'], ['cuadro_honor.php']), $current); ?>
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle<?= $pActive ? ' active-parent' : '' ?>" href="#" data-bs-toggle="dropdown">
               <i class="bi bi-balloon-heart"></i>Celebraciones
