@@ -50,9 +50,20 @@ $cols = [
   $sel_imei1 . " AS imei1",
   $sel_imei2 . " AS imei2",
 ];
-$cols[] = $col_color  ? "p.`$col_color` AS color"       : "'' AS color";
-$cols[] = $col_precio ? "p.`$col_precio` AS precio_lista" : "0 AS precio_lista";
-$cols[] = $col_tipo   ? "LOWER(p.`$col_tipo`) AS tipo"   : "'' AS tipo";
+$cols[] = $col_color  ? "p.`$col_color` AS color"          : "'' AS color";
+$cols[] = $col_precio ? "p.`$col_precio` AS precio_lista"  : "0 AS precio_lista";
+$cols[] = $col_tipo   ? "LOWER(TRIM(p.`$col_tipo`)) AS tipo" : "'' AS tipo";
+
+// --- Filtro para EXCLUIR ACCESORIOS ---
+// Si tenemos columna de tipo, filtramos por NOT IN ('accesorio','accesorios').
+// Si NO existe columna de tipo, como fallback dejamos solo los que tengan IMEI.
+$filtroNoAccesorio = '';
+if ($col_tipo) {
+  $filtroNoAccesorio = " AND (p.`$col_tipo` IS NULL OR LOWER(TRIM(p.`$col_tipo`)) NOT IN ('accesorio','accesorios'))";
+} else {
+  // Fallback: requerir algún IMEI no vacío
+  $filtroNoAccesorio = " AND NULLIF(COALESCE($sel_imei1, $sel_imei2, ''), '') <> ''";
+}
 
 // ⚠️ Normalizamos estatus: TRIM + LOWER
 $sql = "
@@ -61,6 +72,7 @@ $sql = "
   INNER JOIN productos p ON i.id_producto = p.id
   WHERE i.id_sucursal = ?
     AND TRIM(LOWER(i.estatus)) = 'disponible'
+    $filtroNoAccesorio
   ORDER BY p.marca, p.modelo, i.id
 ";
 
