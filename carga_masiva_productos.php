@@ -44,6 +44,12 @@ function normDateOrNull($s){
   }
   $ts = strtotime($s); return $ts? date('Y-m-d',$ts) : null;
 }
+function hasColumn(mysqli $conn, string $table, string $column): bool {
+  $t = $conn->real_escape_string($table);
+  $c = $conn->real_escape_string($column);
+  $rs = $conn->query("SHOW COLUMNS FROM `$t` LIKE '$c'");
+  return $rs && $rs->num_rows > 0;
+}
 
 // ===== Configuración de columnas soportadas (map por encabezado) =====
 $COLS = [
@@ -55,10 +61,14 @@ $COLS = [
   'tipo_producto','subtipo','gama','ciclo_vida','abc','operador','resurtible',
   // inventario
   'fecha_ingreso','sucursal',
+  // 🆕 cantidad (para accesorios)
+  'cantidad',
 ];
 
 // ===== Estados UI =====
 $msg=''; $alert='info'; $preview=[]; $reportLink=''; $insertadas=0; $ignoradas=0;
+
+$inventarioTieneCantidad = hasColumn($conn,'inventario','cantidad'); // para avisos
 
 // ===== Vista previa =====
 if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='preview' && isset($_FILES['archivo'])) {
@@ -71,24 +81,24 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='preview' &&
       $map = []; // idx -> colname estandarizado
       foreach ($hdr as $i=>$h) { $k = slug($h); $map[$i] = $k; }
 
-      // Necesitamos al menos: codigo_producto, marca, modelo, sucursal, fecha_ingreso, costo, precio_lista, imei1
-      $need = ['codigo_producto','marca','modelo','sucursal','fecha_ingreso','costo','precio_lista','imei1'];
+      // Requeridos mínimos (para equipos). Para accesorios flexibilizamos imei1.
+      $need = ['codigo_producto','marca','modelo','sucursal','fecha_ingreso','costo','precio_lista'];
       $have = array_values($map);
       $missing = array_diff($need, $have);
       if (!empty($missing)) {
         $msg = '❌ Faltan encabezados requeridos: <code>'.esc(implode(', ',$missing)).'</code>';
         $alert='danger';
       } else {
-        // cache sucursales
+        // cache sucursales (por nombre exacto)
         $sucMap = [];
         $q = $conn->query("SELECT id,nombre FROM sucursales");
         if ($q) { while($r=$q->fetch_assoc()){ $sucMap[$r['nombre']] = (int)$r['id']; } }
 
         $YES = ['si','sí','1','yes','true'];
         $NO  = ['no','0','false'];
-        $TIPOS = ['equipo'=>'Equipo','modem'=>'Modem','accesorio'=>'Accesorio'];
+        $TIPOS = ['equipo'=>'Equipo','modem'=>'Modem','módem'=>'Modem','mifi'=>'Modem','accesorio'=>'Accesorio'];
         $GAMAS = ['ultra baja','baja','media baja','media','media alta','alta','premium'];
-        $CICLO = ['nuevo'=>'Nuevo','linea'=>'Linea','fin de vida'=>'Fin de vida'];
+        $CICLO = ['nuevo'=>'Nuevo','linea'=>'Linea','línea'=>'Linea','fin de vida'=>'Fin de vida'];
         $ABC   = ['a','b','c'];
 
         $rownum = 1;
@@ -131,18 +141,34 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='preview' &&
           if ($rs!=='')       $r['resurtible'] = in_array($rs,$YES,true) ? 'Sí' : (in_array($rs,$NO,true) ? 'No' : null);
           else                $r['resurtible'] = null;
 
+          // cantidad
+          $cant = (int)($r['cantidad'] ?? 0);
+          if ($cant <= 0) $cant = 1;
+          $r['cantidad'] = $cant;
+
           // sucursal
           $idSucursal = $sucMap[$r['sucursal']] ?? null;
 
           // Validaciones
           $estatus='OK'; $motivo='Listo';
+
           if ($r['codigo_producto']===''){ $estatus='Ignorada'; $motivo='codigo_producto vacío'; }
           if ($estatus==='OK' && !$idSucursal){ $estatus='Ignorada'; $motivo='Sucursal no encontrada'; }
-          if ($estatus==='OK' && !$r['imei1']) { $estatus='Ignorada'; $motivo='IMEI1 vacío'; }
           if ($estatus==='OK' && $r['costo']===null){ $estatus='Ignorada'; $motivo='costo inválido'; }
           if ($estatus==='OK' && $r['precio_lista']===null){ $estatus='Ignorada'; $motivo='precio_lista inválido'; }
-          // Duplicados por IMEI
-          if ($estatus==='OK'){
+
+          $esAccesorio = ($r['tipo_producto']==='Accesorio');
+
+          // IMEI obligatorio solo para equipos/modems
+          if (!$esAccesorio && $estatus==='OK' && !$r['imei1']) { $estatus='Ignorada'; $motivo='IMEI1 vacío (Equipo/Modem)'; }
+
+          // Si es accesorio y NO existe columna inventario.cantidad, advertimos
+          if ($esAccesorio && $estatus==='OK' && !$inventarioTieneCantidad) {
+            $estatus='Ignorada'; $motivo='inventario.cantidad no existe (agrega columna antes de cargar accesorios)';
+          }
+
+          // Duplicados: por IMEI para equipos/modems
+          if ($estatus==='OK' && !$esAccesorio){
             $st=$conn->prepare("SELECT id FROM productos WHERE imei1=? OR imei2=? LIMIT 1");
             $chk = $r['imei2']!=='' ? $r['imei2'] : $r['imei1'];
             $st->bind_param("ss",$r['imei1'],$chk);
@@ -174,53 +200,111 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='insertar' &
   $fname = 'reporte_carga_prod_'.date('Ymd_His').'.csv';
   $fpath = $dir.'/'.$fname;
   $out = fopen($fpath,'w');
-  fputcsv($out, ['codigo_producto','marca','modelo','color','ram','capacidad','imei1','imei2','sucursal','estatus_final','motivo']);
+  fputcsv($out, ['codigo_producto','marca','modelo','sucursal','tipo','cantidad','estatus_final','motivo']);
 
   $conn->begin_transaction();
   try{
     foreach ($items as $it){
-      $r = $it['data']; $idSuc = $it['id_sucursal']; $final=$it['estatus']; $why=$it['motivo'];
+      $r = $it['data']; $idSuc = (int)$it['id_sucursal']; $final=$it['estatus']; $why=$it['motivo'];
 
       if ($final==='OK') {
-        // Insert a productos (TODOS los campos disponibles)
-        $sql = "INSERT INTO productos (
-          codigo_producto, marca, modelo, color, ram, capacidad,
-          imei1, imei2, costo, costo_con_iva, proveedor, precio_lista,
-          descripcion, nombre_comercial, compania, financiera, fecha_lanzamiento,
-          tipo_producto, subtipo, gama, ciclo_vida, abc, operador, resurtible
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
-        $st = $conn->prepare($sql);
-        $st->bind_param(
-          "ssssssssddsdssssssssssss",
-          $r['codigo_producto'], $r['marca'], $r['modelo'], $r['color'], $r['ram'], $r['capacidad'],
-          $r['imei1'], $r['imei2'], $r['costo'], $r['costo_con_iva'], $r['proveedor'], $r['precio_lista'],
-          $r['descripcion'], $r['nombre_comercial'], $r['compania'], $r['financiera'], $r['fecha_lanzamiento'],
-          $r['tipo_producto'], $r['subtipo'], $r['gama'], $r['ciclo_vida'], $r['abc'], $r['operador'], $r['resurtible']
-        );
+        $esAccesorio = ($r['tipo_producto']==='Accesorio');
+        $cantidad = max(1, (int)($r['cantidad'] ?? 1));
 
-        if ($st->execute()) {
-          $idProd = $st->insert_id;
-          $st->close();
+        // SOLO accesorios se reutilizan por codigo_producto (catálogo)
+        $idProd = null;
+        if ($esAccesorio && $r['codigo_producto']!=='') {
+          $chk = $conn->prepare("SELECT id FROM productos WHERE codigo_producto=? LIMIT 1");
+          $chk->bind_param("s", $r['codigo_producto']);
+          $chk->execute();
+          $idProd = ($chk->get_result()->fetch_assoc()['id'] ?? null);
+          $chk->close();
+        }
 
-          // Inventario
-          $sqlI = "INSERT INTO inventario (id_producto, id_sucursal, estatus, fecha_ingreso)
-                   VALUES (?, ?, 'Disponible', ?)";
-          $sti = $conn->prepare($sqlI);
-          $sti->bind_param("iis", $idProd, $idSuc, $r['fecha_ingreso']);
-          $sti->execute(); $sti->close();
+        if (!$idProd) {
+          // Limpiar IMEIs: si accesorio o vienen vacíos => NULL
+          $imei1Ins = trim((string)($r['imei1'] ?? ''));
+          $imei2Ins = trim((string)($r['imei2'] ?? ''));
+          if ($esAccesorio || $imei1Ins === '') $imei1Ins = null;
+          if ($esAccesorio || $imei2Ins === '') $imei2Ins = null;
 
-          $final='Insertada'; $why='OK'; $insertadas++;
-        } else {
-          $final='Ignorada'; $why='Error al insertar producto'; $ignoradas++;
+          // Insert a productos (TODOS los campos disponibles)
+          $sql = "INSERT INTO productos (
+            codigo_producto, marca, modelo, color, ram, capacidad,
+            imei1, imei2, costo, costo_con_iva, proveedor, precio_lista,
+            descripcion, nombre_comercial, compania, financiera, fecha_lanzamiento,
+            tipo_producto, subtipo, gama, ciclo_vida, abc, operador, resurtible
+          ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+          $st = $conn->prepare($sql);
+          $st->bind_param(
+            "ssssssssddsdssssssssssss",
+            $r['codigo_producto'], $r['marca'], $r['modelo'], $r['color'], $r['ram'], $r['capacidad'],
+            $imei1Ins, $imei2Ins, $r['costo'], $r['costo_con_iva'], $r['proveedor'], $r['precio_lista'],
+            $r['descripcion'], $r['nombre_comercial'], $r['compania'], $r['financiera'], $r['fecha_lanzamiento'],
+            $r['tipo_producto'], $r['subtipo'], $r['gama'], $r['ciclo_vida'], $r['abc'], $r['operador'], $r['resurtible']
+          );
+          if (!$st->execute()) {
+            $final='Ignorada'; $why='Error al insertar producto'; $ignoradas++;
+            $st->close();
+            fputcsv($out, [$r['codigo_producto'],$r['marca'],$r['modelo'],$r['sucursal'] ?? '',$r['tipo_producto'],$cantidad,$final,$why]);
+            continue;
+          }
+          $idProd = (int)$st->insert_id;
           $st->close();
         }
+
+        // === Inventario
+        if ($esAccesorio) {
+          // UPSERT por (producto, sucursal, estatus=Disponible)
+          // 1) ¿ya hay fila?
+          $sel = $conn->prepare("SELECT id, cantidad FROM inventario WHERE id_producto=? AND id_sucursal=? AND estatus='Disponible' LIMIT 1");
+          $sel->bind_param("ii", $idProd, $idSuc);
+          $sel->execute();
+          $ex = $sel->get_result()->fetch_assoc();
+          $sel->close();
+
+          if ($ex) {
+            $upd = $conn->prepare("UPDATE inventario SET cantidad = cantidad + ? WHERE id=?");
+            $upd->bind_param("ii", $cantidad, $ex['id']);
+            $upd->execute();
+            $upd->close();
+          } else {
+            if (hasColumn($conn,'inventario','cantidad')) {
+              $ins = $conn->prepare("INSERT INTO inventario (id_producto, id_sucursal, estatus, cantidad, fecha_ingreso) VALUES (?, ?, 'Disponible', ?, ?)");
+              $ins->bind_param("iiis", $idProd, $idSuc, $cantidad, $r['fecha_ingreso']);
+              $ins->execute(); $ins->close();
+            } else {
+              // Fallback defensivo (idealmente no cargar accesorios sin columna cantidad)
+              $ins = $conn->prepare("INSERT INTO inventario (id_producto, id_sucursal, estatus, fecha_ingreso) VALUES (?, ?, 'Disponible', ?)");
+              $ins->bind_param("iis", $idProd, $idSuc, $r['fecha_ingreso']);
+              $ins->execute(); $ins->close();
+            }
+          }
+        } else {
+          // Equipo / Modem => una fila por IMEI (cantidad siempre 1)
+          if (hasColumn($conn,'inventario','cantidad')) {
+            $sqlI = "INSERT INTO inventario (id_producto, id_sucursal, estatus, cantidad, fecha_ingreso)
+                     VALUES (?, ?, 'Disponible', 1, ?)";
+            $sti = $conn->prepare($sqlI);
+            $sti->bind_param("iis", $idProd, $idSuc, $r['fecha_ingreso']);
+            $sti->execute(); $sti->close();
+          } else {
+            $sqlI = "INSERT INTO inventario (id_producto, id_sucursal, estatus, fecha_ingreso)
+                     VALUES (?, ?, 'Disponible', ?)";
+            $sti = $conn->prepare($sqlI);
+            $sti->bind_param("iis", $idProd, $idSuc, $r['fecha_ingreso']);
+            $sti->execute(); $sti->close();
+          }
+        }
+
+        $final='Insertada'; $why='OK'; $insertadas++;
       } else {
         $ignoradas++;
       }
 
       fputcsv($out, [
-        $r['codigo_producto'],$r['marca'],$r['modelo'],$r['color'],$r['ram'],$r['capacidad'],
-        $r['imei1'],$r['imei2'],$r['sucursal'] ?? '', $final, $why
+        $r['codigo_producto'],$r['marca'],$r['modelo'],$r['sucursal'] ?? '', $r['tipo_producto'],
+        max(1,(int)($r['cantidad'] ?? 1)), $final, $why
       ]);
     }
     $conn->commit();
@@ -250,7 +334,12 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='insertar' &
 <body>
 <div class="container my-4">
   <h3>📥 Carga masiva de Productos al Inventario</h3>
-  <p class="text-muted">El CSV debe incluir encabezados. Los nombres pueden ir en cualquier orden y sin respetar mayúsculas.</p>
+  <p class="text-muted">
+    El CSV debe incluir encabezados. Para accesorios puedes dejar IMEI en blanco e incluir <code>cantidad</code>. 
+    <?php if(!$inventarioTieneCantidad): ?>
+      <br><span class="text-danger"><b>Atención:</b> Tu tabla <code>inventario</code> no tiene la columna <code>cantidad</code>. Agrega la columna antes de cargar accesorios.</span>
+    <?php endif; ?>
+  </p>
 
   <?php if($msg): ?>
     <div class="alert alert-<?=esc($alert)?>">
@@ -293,21 +382,14 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='insertar' &
                   <th>Código</th>
                   <th>Marca</th>
                   <th>Modelo</th>
-                  <th>Color</th>
-                  <th>RAM</th>
-                  <th>Capacidad</th>
-                  <th>IMEI1</th>
-                  <th>IMEI2</th>
+                  <th>Tipo</th>
                   <th>Sucursal</th>
                   <th>Fecha ingreso</th>
                   <th>$ Costo</th>
                   <th>$ Lista</th>
-                  <th>Tipo</th>
-                  <th>Subtipo</th>
-                  <th>Gama</th>
-                  <th>Ciclo</th>
-                  <th>ABC</th>
-                  <th>Resurtible</th>
+                  <th>IMEI1</th>
+                  <th>IMEI2</th>
+                  <th>Cantidad</th>
                   <th>Estatus</th>
                   <th>Motivo</th>
                 </tr>
@@ -319,21 +401,14 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='insertar' &
                     <td><?= esc($d['codigo_producto']) ?></td>
                     <td><?= esc($d['marca']) ?></td>
                     <td><?= esc($d['modelo']) ?></td>
-                    <td><?= esc($d['color']) ?></td>
-                    <td><?= esc($d['ram']) ?></td>
-                    <td><?= esc($d['capacidad']) ?></td>
-                    <td><?= esc($d['imei1']) ?></td>
-                    <td><?= esc($d['imei2']) ?></td>
+                    <td><?= esc($d['tipo_producto']) ?></td>
                     <td><?= esc($d['sucursal']) ?></td>
                     <td><?= esc($d['fecha_ingreso']) ?></td>
                     <td><?= $d['costo']!==null?number_format((float)$d['costo'],2):'' ?></td>
                     <td><?= $d['precio_lista']!==null?number_format((float)$d['precio_lista'],2):'' ?></td>
-                    <td><?= esc($d['tipo_producto']) ?></td>
-                    <td><?= esc($d['subtipo']) ?></td>
-                    <td><?= esc($d['gama']) ?></td>
-                    <td><?= esc($d['ciclo_vida']) ?></td>
-                    <td><?= esc($d['abc']) ?></td>
-                    <td><?= esc($d['resurtible']) ?></td>
+                    <td><?= esc($d['imei1']) ?></td>
+                    <td><?= esc($d['imei2']) ?></td>
+                    <td><?= (int)($d['cantidad'] ?? 1) ?></td>
                     <td><?= esc($p['estatus']) ?></td>
                     <td><?= esc($p['motivo']) ?></td>
                   </tr>

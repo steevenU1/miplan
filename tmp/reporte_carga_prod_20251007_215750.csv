@@ -1,0 +1,508 @@
+codigo_producto,marca,modelo,sucursal,tipo,cantidad,estatus_final,motivo
+"TEL-XIA-RMI NOTE 14-256GB-8R-DOR",XIAOMI,"REDMI NOTE 14","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-128GB-4R-NGO",XIAOMI,"REDMI 14C","MP San Mateo",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP San Mateo",Equipo,1,Insertada,OK
+"TEL-XIA-RMI NOTE 14-256GB-8R-AZ",XIAOMI,"REDMI NOTE 14","MP S Galeana",Equipo,1,Insertada,OK
+"TEL-XIA-RMI NOTE 14-256GB-8R-AZ",XIAOMI,"REDMI NOTE 14","MP S Galeana",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-128GB-4R-NGO",SAMSUNG,"GALAXY A06","MP S Galeana",Equipo,1,Insertada,OK
+"TEL-XIA-RMI NOTE 14-128GB-6R-NGO",XIAOMI,"REDMI NOTE 14","MP S Tianguistenco",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-128GB-4R-NGO",SAMSUNG,"GALAXY A06","MP S Galeana",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-64GB-4R-GR",SAMSUNG,"GALAXY A06","MP S Tianguistenco",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Lerma",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Lerma",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Lerma",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-128GB-4R-AZ",SAMSUNG,"GALAXY A06","MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP S Galeana",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP San Mateo",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP San Mateo",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP San Mateo",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP S Galeana",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-NGO",SAMSUNG,"GALAXY A16","MP S Galeana",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-64GB-4R-NGO",SAMSUNG,"GALAXY A06","MP S Tianguistenco",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-128GB-4R-GR",SAMSUNG,"GALAXY A06","MP Tenancingo",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-BCO,HONOR,X7C,"MP Aldama",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Aldama",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-BCO",TECNO,"SPARK 30 PRO","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-NGO",TECNO,"SPARK 30 PRO","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-NGO",TECNO,"SPARK 30 PRO","MP S Galeana",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-MTA",SAMSUNG,"GALAXY A26","MP Almacen General",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Molino",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Molino",Equipo,1,Insertada,OK
+"TAB-SKY-SKYPAD 10 MAX-64GB-3R-NGO",SKY,"SKYPAD 10 MAX","MP Molino",Equipo,1,Insertada,OK
+"TEL-HON-X6B PLUS-256GB-8R-VER",HONOR,"X6B PLUS","MP Tenancingo",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-GR",SAMSUNG,"GALAXY A16","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-NGO",TECNO,"CAMON 40PRO","MP Capulhuac",Equipo,1,Insertada,OK
+"TEL-XIA-RMI A5-64GB-3R-AZ",XIAOMI,"REDMI A5","MP Molino",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Lerma",Equipo,1,Insertada,OK
+"TEL-HON-X6B PLUS-256GB-8R-MOR",HONOR,"X6B PLUS","MP S Galeana",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP S Tianguistenco",Equipo,1,Insertada,OK
+"TEL-HON-X6B PLUS-256GB-8R-VER",HONOR,"X6B PLUS","MP Tenango",Equipo,1,Insertada,OK
+"TEL-XIA-RMI NOTE 14-128GB-6R-AZ",XIAOMI,"REDMI NOTE 14","MP Tenancingo",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-NGO",TECNO,"SPARK 30 PRO","MP Tenancingo",Equipo,1,Insertada,OK
+"TEL-HON-X6B PLUS-256GB-8R-VER",HONOR,"X6B PLUS","MP Tenancingo",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-BCO",TECNO,"CAMON 40PRO","MP Seminario",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-GR",TECNO,"CAMON 40PRO","MP Seminario",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-RJO,MOTOROLA,G05,"MP Lerma",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-GR",SAMSUNG,"GALAXY A16","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-MOT-G35 5G-256GB-4R-NGO",MOTOROLA,G35,"MP Molino",Equipo,1,Insertada,OK
+"TEL-INF-HOT 60I-256GB-8R-NGO",INFINIX,"HOT 60I","MP Molino",Equipo,1,Insertada,OK
+"TEL-MOT-G35 5G-256GB-4R-NAR",MOTOROLA,G35,"MP Aldama",Equipo,1,Insertada,OK
+"TEL-MOT-G35 5G-256GB-4R-NGO",MOTOROLA,G35,"MP Aldama",Equipo,1,Insertada,OK
+TEL-OPP-A40-128GB-4R-NGO,OPPO,A40,"MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-INF-HOT 50PRO-256GB-8R-NGO",INFINIX,"HOT 50 PRO","MP Malinalco",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Seminario",Equipo,1,Insertada,OK
+TEL-OPP-A40-128GB-4R-MOR,OPPO,A40,"MP Seminario",Equipo,1,Insertada,OK
+"TEL-MOT-G35 5G-256GB-4R-VER",MOTOROLA,G35,"MP Seminario",Equipo,1,Insertada,OK
+"TEL-MOT-EDGE 50 FUSION-256GB-8R-AZ",MOTOROLA,"EDGE 50 FUSION","MP Capulhuac",Equipo,1,Insertada,OK
+"TEL-MOT-EDGE 50 FUSION-256GB-8R-ROS",MOTOROLA,"EDGE 50 FUSION","MP Capulhuac",Equipo,1,Insertada,OK
+"TEL-INF-HOT 50PRO-256GB-8R-MOR",INFINIX,"HOT 50 PRO","MP Capulhuac",Equipo,1,Insertada,OK
+"TEL-INF-HOT 50PRO-256GB-8R-GR",INFINIX,"HOT 50 PRO","MP Capulhuac",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Tultepec",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Tultepec",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-GR",SAMSUNG,"GALAXY A16","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-NGO",SAMSUNG,"GALAXY A16","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-NGO",SAMSUNG,"GALAXY A16","MP Almacen General",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Almacen General",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-NGO",TECNO,"SPARK 30 PRO","MP Aldama",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-NGO",TECNO,"SPARK 30 PRO","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-MOT-EDGE 50 FUSION-256GB-8R-AZ",MOTOROLA,"EDGE 50 FUSION","MP S Tianguistenco",Equipo,1,Insertada,OK
+"TEL-MOT-EDGE 50 FUSION-256GB-8R-AZ",MOTOROLA,"EDGE 50 FUSION","MP S Tianguistenco",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-BCO",TECNO,"SPARK 30 PRO","MP Malinalco",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-NGO",TECNO,"SPARK 30 PRO","MP Malinalco",Equipo,1,Insertada,OK
+TEL-XIA-RMI-A5-128GB-4R-NGO,XIAOMI,"REDMI A5","MP Seminario",Equipo,1,Insertada,OK
+"TEL-XIA-RMI NOTE 14-128GB-6R-AZ",XIAOMI,"REDMI NOTE 14","MP Seminario",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-NGO",TECNO,"SPARK 30 PRO","MP Seminario",Equipo,1,Insertada,OK
+"TEL-MOT-EDGE 50 FUSION-256GB-8R-ROS",MOTOROLA,"EDGE 50 FUSION","MP Seminario",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-NGO",TECNO,"SPARK 30 PRO","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-XIA-RMI NOTE 14-256GB-8R-DOR",XIAOMI,"REDMI NOTE 14","MP San Mateo",Equipo,1,Insertada,OK
+TEL-XIA-RMI-A5-128GB-4R-NGO,XIAOMI,"REDMI A5","MP Tenango",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Tultepec",Equipo,1,Insertada,OK
+TEL-XIA-RMI-A5-128GB-4R-NGO,XIAOMI,"REDMI A5","MP Tultepec",Equipo,1,Insertada,OK
+"TEL-TEC-SPK GO 2-128GB-4R-VER",TECNO,"SPARK GO 2","MP Tultepec",Equipo,1,Insertada,OK
+"TEL-MOT-EDGE 50 FUSION-256GB-8R-AZ",MOTOROLA,"EDGE 50 FUSION","MP Tultepec",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-GR",TECNO,"CAMON 40PRO","MP Capulhuac",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-VER",TECNO,"CAMON 40PRO","MP Capulhuac",Equipo,1,Insertada,OK
+TEL-OPP-A40-128GB-4R-NGO,OPPO,A40,"MP Capulhuac",Equipo,1,Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-AZ",HONOR,"X5B PLUS","MP Tenango",Equipo,1,Insertada,OK
+"TEL-MOT-EDGE 50 FUSION-256GB-8R-AZ",MOTOROLA,"EDGE 50 FUSION","MP Lerma",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-NGO",TECNO,"SPARK 30 PRO","MP Lerma",Equipo,1,Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-NGO",HONOR,"X5B PLUS","MP S Galeana",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-GR",TECNO,"CAMON 40PRO","MP S Galeana",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-GR",TECNO,"CAMON 40PRO","MP S Galeana",Equipo,1,Insertada,OK
+TEL-OPP-A40-128GB-4R-NGO,OPPO,A40,"MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-MOT-EDGE 50 FUSION-256GB-8R-AZ",MOTOROLA,"EDGE 50 FUSION","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-MOT-EDGE 50 FUSION-256GB-8R-ROS",MOTOROLA,"EDGE 50 FUSION","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-XIA-RMI NOTE 14-128GB-6R-VER",XIAOMI,"REDMI NOTE 14","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-AZ",HONOR,"X5B PLUS","MP Malinalco",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-NGO",XIAOMI,"REDMI 14C","MP Molino",Equipo,1,Insertada,OK
+"TEL-MOT-EDGE 50 FUSION-256GB-8R-AZ",MOTOROLA,"EDGE 50 FUSION","MP Molino",Equipo,1,Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-NGO",HONOR,"X5B PLUS","MP Tenancingo",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-GR",TECNO,"CAMON 40PRO","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-MOT-EDGE 50 FUSION-256GB-8R-AZ",MOTOROLA,"EDGE 50 FUSION","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-MOT-EDGE 50 FUSION-256GB-8R-VER",MOTOROLA,"EDGE 50 FUSION","MP Totoltepec",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP San Lucas",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-128GB-4R-AZ",SAMSUNG,"GALAXY A06","MP San Lucas",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-128GB-4R-GR",SAMSUNG,"GALAXY A06","MP San Lucas",Equipo,1,Insertada,OK
+"TEL-MOT-G24 PW-256GB-4R-AZ",MOTOROLA,"G24 POWER","MP San Lucas",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-256GB-16R-BCO",TECNO,"SPARK 30C","MP San Lucas",Equipo,1,Insertada,OK
+"TEL-HON-X6B PLUS-256GB-8R-MOR",HONOR,"X6B PLUS","MP San Lucas",Equipo,1,Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-AZ",HONOR,"X5B PLUS","MP San Lucas",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-GR",SAMSUNG,"GALAXY A16","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-GR",SAMSUNG,"GALAXY A16","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-GR",SAMSUNG,"GALAXY A16","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-GR",SAMSUNG,"GALAXY A16","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-GR",SAMSUNG,"GALAXY A16","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-NGO",SAMSUNG,"GALAXY A16","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-NGO",SAMSUNG,"GALAXY A16","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-VER",SAMSUNG,"GALAXY A16","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-VER",SAMSUNG,"GALAXY A16","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-MOT-G24 PW-256GB-4R-AZ",MOTOROLA,"G24 POWER","MP Tenango",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-NGO",TECNO,"CAMON 40PRO","MP San Lucas",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-BCO",TECNO,"SPARK 30 PRO","MP San Lucas",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-BCO,HONOR,X7C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-NGO",SAMSUNG,"GALAXY A16","MP Capulhuac",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-RJO,MOTOROLA,G05,"MP San Mateo",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-BCO,HONOR,X7C,"MP San Mateo",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-RJO,MOTOROLA,G05,"MP Tenango",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Tenango",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Tenango",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-GR",TECNO,"CAMON 40PRO","MP S Galeana",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Tultepec",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-GR",SAMSUNG,"GALAXY A16","MP Aldama",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-VER",SAMSUNG,"GALAXY A16","MP Aldama",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Aldama",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Ocoyoacac",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP S Tianguistenco",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP S Tianguistenco",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Tenancingo",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Tenancingo",Equipo,1,Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-NGO",HONOR,"X5B PLUS","MP Tenancingo",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Molino",Equipo,1,Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-NGO",HONOR,"X5B PLUS","MP Molino",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Seminario",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Seminario",Equipo,1,Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-AZ",HONOR,"X5B PLUS","MP Seminario",Equipo,1,Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-NGO",HONOR,"X5B PLUS","MP Seminario",Equipo,1,Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-AZ",HONOR,"X5B PLUS","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-AZ",HONOR,"X5B PLUS","MP Totoltepec",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP San Lucas",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP San Lucas",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-64GB-4R-NGO",SAMSUNG,"GALAXY A06","MP Tenango",Equipo,1,Insertada,OK
+"TEL-HON-X6B PLUS-256GB-8R-VER",HONOR,"X6B PLUS","MP Capulhuac",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP San Mateo",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Tenango",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-BCO,HONOR,X7C,"MP Tenango",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-64GB-4R-VER",SAMSUNG,"GALAXY A06","MP Tenango",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-128GB-4R-VER",SAMSUNG,"GALAXY A06","MP Lerma",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Lerma",Equipo,1,Insertada,OK
+TEL-HON-X8B-256GB-8R-NGO,HONOR,X8B,"MP Lerma",Equipo,1,Insertada,OK
+TEL-MOT-G04S-128GB-4R-NGO,MOTOROLA,G04S,"MP Tultepec",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-64GB-4R-NGO",SAMSUNG,"GALAXY A06","MP Aldama",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-64GB-4R-NGO",SAMSUNG,"GALAXY A06","MP Aldama",Equipo,1,Insertada,OK
+"TEL-MOT-G24 PW-256GB-8R-CEL",MOTOROLA,"G24 POWER","MP Aldama",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-VER",SAMSUNG,"GALAXY A16","MP Ocoyoacac",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP S Tianguistenco",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP S Tianguistenco",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-RJO,MOTOROLA,G05,"MP Molino",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Molino",Equipo,1,Insertada,OK
+"TEL-HON-X6B PLUS-256GB-8R-VER",HONOR,"X6B PLUS","MP Molino",Equipo,1,Insertada,OK
+"TEL-MOT-G24 PW-256GB-4R-AZ",MOTOROLA,"G24 POWER","MP Seminario",Equipo,1,Insertada,OK
+TEL-MOT-G04S-128GB-4R-NGO,MOTOROLA,G04S,"MP Seminario",Equipo,1,Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-AZ",HONOR,"X5B PLUS","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-AZ",HONOR,"X5B PLUS","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-HON-X5B PLUS-256GB-4R-NGO",HONOR,"X5B PLUS","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-VER",SAMSUNG,"GALAXY A16","MP Totoltepec",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Totoltepec",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Totoltepec",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Totoltepec",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Totoltepec",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-64GB-4R-VER",SAMSUNG,"GALAXY A06","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-NGO",TECNO,"SPARK 30 PRO","MP Totoltepec",Equipo,1,Insertada,OK
+TEL-MOT-G04S-128GB-4R-VER,MOTOROLA,G04S,"MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-HON-X6B PLUS-256GB-8R-MOR",HONOR,"X6B PLUS","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-HON-PLAY 9A-64GB-4R-MOR",HONOR,"PLAY 9A","MP Totoltepec",Equipo,1,Insertada,OK
+TEL-MOT-G04S-128GB-4R-NGO,MOTOROLA,G04S,"MP Totoltepec",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Aldama",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Aldama",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP San Mateo",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP San Mateo",Equipo,1,Insertada,OK
+"TEL-MOT-G24 PW-256GB-4R-CEL",MOTOROLA,"G24 POWER","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-XIA-RMI NOTE 14-128GB-6R-VER",XIAOMI,"REDMI NOTE 14","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-NGO",TECNO,"SPARK 30 PRO","MP San Mateo",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Lerma",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-GR",SAMSUNG,"GALAXY A16","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-GR",SAMSUNG,"GALAXY A16","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-GR",SAMSUNG,"GALAXY A16","MP Malinalco",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Malinalco",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Malinalco",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Tenancingo",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-GR",SAMSUNG,"GALAXY A16","MP Tenancingo",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Tenancingo",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Tenango",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Tenango",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP S Galeana",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP S Galeana",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP S Galeana",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-BCO,HONOR,X7C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-BCO,HONOR,X7C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-BCO,HONOR,X7C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Almacen General",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-NGO",XIAOMI,"REDMI 14C","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-NGO",XIAOMI,"REDMI 14C","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-NGO",XIAOMI,"REDMI 14C","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-VER",XIAOMI,"REDMI 14C","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-VER",XIAOMI,"REDMI 14C","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-BCO",SAMSUNG,"GALAXY A26","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-BCO",SAMSUNG,"GALAXY A26","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-NGO",SAMSUNG,"GALAXY A26","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-NGO",TECNO,"CAMON 40PRO","MP Aldama",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-GR",TECNO,"CAMON 40PRO","MP Aldama",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-NGO",XIAOMI,"REDMI 14C","MP Aldama",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-VER",XIAOMI,"REDMI 14C","MP Aldama",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-AZ,TECNO,"POVA 6","MP Aldama",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-GR,TECNO,"POVA 6","MP Aldama",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-MTA",SAMSUNG,"GALAXY A26","MP Aldama",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-NGO",SAMSUNG,"GALAXY A26","MP Aldama",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-NGO",TECNO,"SPARK 30C","MP Aldama",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-NGO",TECNO,"SPARK 30C","MP Aldama",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-NGO",SAMSUNG,"GALAXY A26","MP Capulhuac",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-256GB-8R-BCO",SAMSUNG,"GALAXY A26","MP Capulhuac",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Capulhuac",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-256GB-8R-VER",TECNO,"SPARK 30C","MP Capulhuac",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Capulhuac",Equipo,1,Insertada,OK
+"TEL-XIA-RMI NOTE 14-128GB-6R-NGO",XIAOMI,"REDMI NOTE 14","MP Capulhuac",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-VER",XIAOMI,"REDMI 14C","MP Capulhuac",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP San Mateo",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP San Mateo",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP San Mateo",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-BCO",TECNO,"CAMON 40PRO","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-NGO",TECNO,"CAMON 40PRO","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-GR",TECNO,"CAMON 40PRO","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-128GB-4R-NGO",XIAOMI,"REDMI 14C","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-128GB-4R-VER",XIAOMI,"REDMI 14C","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-BCO",SAMSUNG,"GALAXY A26","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-NGO",SAMSUNG,"GALAXY A26","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-BCO",TECNO,"SPARK 30C","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-NGO",TECNO,"SPARK 30C","MP San Mateo",Equipo,1,Insertada,OK
+TEL-OPP-A40-128GB-4R-MOR,OPPO,A40,"MP San Mateo",Equipo,1,Insertada,OK
+"TEL-MOT-EDGE 50 FUSION-256GB-8R-AZ",MOTOROLA,"EDGE 50 FUSION","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-HON-X6B PLUS-256GB-8R-MOR",HONOR,"X6B PLUS","MP San Mateo",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-AZ,TECNO,"POVA 6","MP San Mateo",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-GR,TECNO,"POVA 6","MP San Mateo",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-VER,TECNO,"POVA 6","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 40PRO-256GB-8R-NGO",TECNO,"SPARK 40 PRO","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-MTA",SAMSUNG,"GALAXY A26","MP Lerma",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-GR,TECNO,"POVA 6","MP Lerma",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-VER,TECNO,"POVA 6","MP Lerma",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-VER,TECNO,"POVA 6","MP S Galeana",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-8R-NGO",XIAOMI,"REDMI 14C","MP S Galeana",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-NGO",SAMSUNG,"GALAXY A26","MP S Galeana",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-NGO",SAMSUNG,"GALAXY A26","MP S Galeana",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-VER",SAMSUNG,"GALAXY A16","MP S Galeana",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-RJO,MOTOROLA,G05,"MP S Galeana",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-VER",SAMSUNG,"GALAXY A16","MP Tultepec",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-NGO",SAMSUNG,"GALAXY A16","MP Tultepec",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-VER",SAMSUNG,"GALAXY A16","MP Tultepec",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-NGO",XIAOMI,"REDMI 14C","MP Tultepec",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-NGO",XIAOMI,"REDMI 14C","MP Tultepec",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30PRO-256GB-8R-NGO",TECNO,"SPARK 30 PRO","MP Tultepec",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-NGO",TECNO,"SPARK 30C","MP Tultepec",Equipo,1,Insertada,OK
+"TEL-INF-HOT 50PRO-256GB-8R-NGO",INFINIX,"HOT 50 PRO","MP Tultepec",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-BCO",TECNO,"CAMON 40PRO","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-BCO",TECNO,"CAMON 40PRO","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-BCO",TECNO,"CAMON 40PRO","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-BCO",TECNO,"CAMON 40PRO","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-NGO",TECNO,"CAMON 40PRO","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-GR",TECNO,"CAMON 40PRO","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-GR",TECNO,"CAMON 40PRO","MP Almacen General",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-GR",TECNO,"CAMON 40PRO","MP Almacen General",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Ocoyoacac",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Ocoyoacac",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-VER,TECNO,"POVA 6","MP Ocoyoacac",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-AZ,TECNO,"POVA 6","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-BCO",TECNO,"CAMON 40PRO","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-GR",TECNO,"CAMON 40PRO","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-BCO",TECNO,"SPARK 30C","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-NGO",TECNO,"SPARK 30C","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-VER",TECNO,"SPARK 30C","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-64GB-4R-NGO",SAMSUNG,"GALAXY A06","MP Ocoyoacac",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-GR",SAMSUNG,"GALAXY A16","MP S Tianguistenco",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-VER",SAMSUNG,"GALAXY A16","MP S Tianguistenco",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP S Tianguistenco",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-GR,TECNO,"POVA 6","MP S Tianguistenco",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-RJO,MOTOROLA,G05,"MP Capulhuac",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-BCO,HONOR,X7C,"MP Capulhuac",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Capulhuac",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-BCO,HONOR,X8C,"MP Capulhuac",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-GR",SAMSUNG,"GALAXY A16","MP Malinalco",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-VER",SAMSUNG,"GALAXY A16","MP Malinalco",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Malinalco",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Malinalco",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Malinalco",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-128GB-4R-AZ",SAMSUNG,"GALAXY A06","MP Malinalco",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-NGO",XIAOMI,"REDMI 14C","MP Malinalco",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-BCO",SAMSUNG,"GALAXY A26","MP Malinalco",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-MTA",SAMSUNG,"GALAXY A26","MP Malinalco",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-NGO",SAMSUNG,"GALAXY A26","MP Malinalco",Equipo,1,Insertada,OK
+TEL-MOT-G04S-128GB-4R-NGO,MOTOROLA,G04S,"MP Malinalco",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-NGO",TECNO,"SPARK 30C","MP Malinalco",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-NGO",TECNO,"SPARK 30C","MP Malinalco",Equipo,1,Insertada,OK
+TEL-OPP-A40-128GB-4R-MOR,OPPO,A40,"MP Malinalco",Equipo,1,Insertada,OK
+"TEL-MOT-G35 5G-256GB-4R-NAR",MOTOROLA,G35,"MP Malinalco",Equipo,1,Insertada,OK
+"TEL-HON-X6B PLUS-256GB-8R-VER",HONOR,"X6B PLUS","MP Malinalco",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-AZ,TECNO,"POVA 6","MP Malinalco",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-GR,TECNO,"POVA 6","MP Malinalco",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-VER,TECNO,"POVA 6","MP Malinalco",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 40PRO-256GB-8R-NGO",TECNO,"SPARK 40 PRO","MP Malinalco",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Molino",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Molino",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-BCO",TECNO,"CAMON 40PRO","MP Molino",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-GR",TECNO,"CAMON 40PRO","MP Molino",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-NGO",XIAOMI,"REDMI 14C","MP Molino",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-VER",XIAOMI,"REDMI 14C","MP Molino",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-NGO",SAMSUNG,"GALAXY A26","MP Molino",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-256GB-8R-BCO",SAMSUNG,"GALAXY A26","MP Molino",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-AZ,TECNO,"POVA 6","MP Molino",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Seminario",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-GR",SAMSUNG,"GALAXY A16","MP Seminario",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-NGO",SAMSUNG,"GALAXY A16","MP Seminario",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Seminario",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-NGO",XIAOMI,"REDMI 14C","MP Seminario",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-VER",XIAOMI,"REDMI 14C","MP Seminario",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-BCO",SAMSUNG,"GALAXY A26","MP Seminario",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-MTA",SAMSUNG,"GALAXY A26","MP Seminario",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-BCO",TECNO,"SPARK 30C","MP Seminario",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-BCO",TECNO,"SPARK 30C","MP Seminario",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-AZ,TECNO,"POVA 6","MP Seminario",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-GR,TECNO,"POVA 6","MP Seminario",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-GR",SAMSUNG,"GALAXY A16","MP Tenancingo",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-BCO,HONOR,X7C,"MP Tenancingo",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Tenancingo",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-VER,TECNO,"POVA 6","MP Tenancingo",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-AZ,TECNO,"POVA 6","MP Tenancingo",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP Tenango",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-NGO",XIAOMI,"REDMI 14C","MP Tenango",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-MTA",SAMSUNG,"GALAXY A26","MP Tenango",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-NGO",SAMSUNG,"GALAXY A26","MP Tenango",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-BCO",TECNO,"SPARK 30C","MP Tenango",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-NGO",TECNO,"SPARK 30C","MP Tenango",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-GR,TECNO,"POVA 6","MP Tenango",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-VER,TECNO,"POVA 6","MP Tenango",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-PTA,HONOR,X8B,"MP San Lucas",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-VER",SAMSUNG,"GALAXY A16","MP San Lucas",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP San Lucas",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-NGO",XIAOMI,"REDMI 14C","MP San Lucas",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-BCO",SAMSUNG,"GALAXY A26","MP San Lucas",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-MTA",SAMSUNG,"GALAXY A26","MP San Lucas",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-256GB-16R-BCO",TECNO,"SPARK 30C","MP San Lucas",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-VER,TECNO,"POVA 6","MP San Lucas",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-VER,TECNO,"POVA 6","MP San Lucas",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP S Galeana",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-NGO",SAMSUNG,"GALAXY A16","MP Totoltepec",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Totoltepec",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Totoltepec",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-NGO",TECNO,"CAMON 40PRO","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A06-128GB-4R-VER",SAMSUNG,"GALAXY A06","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-MOT-G24 PW-256GB-4R-CEL",MOTOROLA,"G24 POWER","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-NGO",XIAOMI,"REDMI 14C","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-VER",XIAOMI,"REDMI 14C","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-VER",XIAOMI,"REDMI 14C","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-NGO",SAMSUNG,"GALAXY A26","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-256GB-8R-MTA",SAMSUNG,"GALAXY A26","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-BCO",TECNO,"SPARK 30C","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-NGO",TECNO,"SPARK 30C","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 30C-128GB-4R-NGO",TECNO,"SPARK 30C","MP Totoltepec",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-AZ,TECNO,"POVA 6","MP Totoltepec",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-GR,TECNO,"POVA 6","MP Totoltepec",Equipo,1,Insertada,OK
+TEL-TEC-POVA6-256GB-8R-VER,TECNO,"POVA 6","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 40PRO-256GB-8R-NGO",TECNO,"SPARK 40 PRO","MP Totoltepec",Equipo,1,Insertada,OK
+"TEL-TEC-SPK 40PRO-256GB-8R-NGO",TECNO,"SPARK 40 PRO","MP Totoltepec",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-RJO,MOTOROLA,G05,"MP Ocoyoacac",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Ocoyoacac",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP Ocoyoacac",Equipo,1,Insertada,OK
+TEL-HON-X8B-512GB-8R-AQU,HONOR,X8B,"MP San Mateo",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-GR",SAMSUNG,"GALAXY A16","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-GR",SAMSUNG,"GALAXY A16","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-NGO",SAMSUNG,"GALAXY A16","MP San Mateo",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-GR",SAMSUNG,"GALAXY A16","MP San Lucas",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-VER",SAMSUNG,"GALAXY A16","MP San Lucas",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-VER,MOTOROLA,G05,"MP San Lucas",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-NGO",TECNO,"CAMON 40PRO","MP San Lucas",Equipo,1,Insertada,OK
+"TEL-XIA-RMI 14C-256GB-4R-VER",XIAOMI,"REDMI 14C","MP San Lucas",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-MTA",SAMSUNG,"GALAXY A26","MP San Lucas",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-NGO",SAMSUNG,"GALAXY A26","MP San Lucas",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A26-128GB-6R-BCO",SAMSUNG,"GALAXY A26","MP Lerma",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-4R-GR",SAMSUNG,"GALAXY A16","MP Lerma",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-VER",SAMSUNG,"GALAXY A16","MP Lerma",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-BCO",TECNO,"CAMON 40PRO","MP Lerma",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-VER,HONOR,X7C,"MP Lerma",Equipo,1,Insertada,OK
+"TEL-SAM-GXY A16-128GB-6R-GR",SAMSUNG,"GALAXY A16","MP Tultepec",Equipo,1,Insertada,OK
+TEL-MOT-G05-128GB-4R-RJO,MOTOROLA,G05,"MP Tultepec",Equipo,1,Insertada,OK
+TEL-HON-X7C-256GB-8R-BCO,HONOR,X7C,"MP Tultepec",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-MOR,HONOR,X8C,"MP Tultepec",Equipo,1,Insertada,OK
+"TEL-TEC-CAM 40PRO-256GB-8R-BCO",TECNO,"CAMON 40PRO","MP Tultepec",Equipo,1,Insertada,OK
+"TEL-INF-NOTE 50S-256GB-8R-RJO",INFINIX,"NOTE 50S","MP Capulhuac",Equipo,1,Insertada,OK
+TEL-HON-X8C-256GB-8R-VER,HONOR,X8C,"MP Tultepec",Equipo,1,Insertada,OK
+FN-HON-X6A-VER,HONOR,X6A,"MP Molino",Accesorio,1,Insertada,OK
+FN-HON-X6B-ROS,HONOR,X6B,"MP Molino",Accesorio,1,Insertada,OK
+FN-HON-X6B-VER,HONOR,X6B,"MP Molino",Accesorio,1,Insertada,OK
+FN-MOT-G24-ROS,MOTOROLA,G24,"MP Molino",Accesorio,1,Insertada,OK
+FN-MOT-G24-TUR,MOTOROLA,G24,"MP Molino",Accesorio,1,Insertada,OK
+AD-TAX-BAS,TAXICO,"BASIC SERIES","MP Tultepec",Accesorio,2,Insertada,OK
