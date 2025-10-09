@@ -70,6 +70,26 @@ function normalizarOperador(string $opRaw): array {
     return [$opRaw, false];
 }
 
+/** Lee el header del CSV y arma un mapa de índice por nombre de columna (case-insensitive). */
+function buildHeaderMap(array $hdr): array {
+    $map = [];
+    foreach ($hdr as $i => $raw) {
+        $k = strtolower(trim((string)$raw));
+        $k = str_replace([' ', '-'], '_', $k);
+        $map[$k] = $i;
+    }
+    // alias comunes
+    if (!isset($map['caja_id'])) {
+        if (isset($map['id_caja'])) $map['caja_id'] = $map['id_caja'];
+        elseif (isset($map['caja'])) $map['caja_id'] = $map['caja'];
+    }
+    return $map;
+}
+function getCsvVal(array $row, array $map, string $key): string {
+    if (isset($map[$key])) return trim((string)($row[$map[$key]] ?? ''));
+    return '';
+}
+
 // ========= Descubrimientos iniciales =========
 
 // ID sucursal Eulalia (almacén)
@@ -80,7 +100,9 @@ if ($resEulalia && $rowE = $resEulalia->fetch_assoc()) {
 }
 
 // ¿La columna inventario_sims.dn permite NULL?
-$dnPermiteNull = columnAllowsNull($conn, 'inventario_sims', 'dn');
+$dnPermiteNull   = columnAllowsNull($conn, 'inventario_sims', 'dn');
+// ¿La columna inventario_sims.lote permite NULL? (debería)
+$lotePermiteNull = columnAllowsNull($conn, 'inventario_sims', 'lote');
 
 // Cache de búsqueda de sucursal
 $sucursalCache = [];
@@ -104,17 +126,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'previ
                 $_SESSION['confirm_token'] = bin2hex(random_bytes(16));
                 $fh = fopen($tmpPath, 'r');
                 if ($fh) {
-                    $fila = 0;
+                    $fila = 0; $hdrMap = null;
                     while (($data = fgetcsv($fh, 0, ",")) !== false) {
                         $fila++;
-                        if ($fila === 1) continue; // header
-                        $iccid = trim($data[0] ?? '');
-                        $dn = trim($data[1] ?? '');
-                        $caja = trim($data[2] ?? '');
-                        $nombre_sucursal = trim($data[3] ?? '');
-                        $operadorRaw = trim($data[4] ?? '');
-                        $id_sucursal = $nombre_sucursal === '' ? $idEulalia : getSucursalIdPorNombre($conn, $nombre_sucursal, $sucursalCache);
-                        [$operador, $opValido] = normalizarOperador($operadorRaw);
+                        if ($fila === 1) { $hdrMap = buildHeaderMap($data); continue; } // header dinámico
+
+                        $iccid   = getCsvVal($data, $hdrMap, 'iccid');
+                        $dn      = getCsvVal($data, $hdrMap, 'dn');
+                        $caja    = getCsvVal($data, $hdrMap, 'caja_id');        // acepta caja/id_caja/caja_id
+                        $lote    = getCsvVal($data, $hdrMap, 'lote');           // nuevo (opcional)
+                        $sucNom  = getCsvVal($data, $hdrMap, 'sucursal');
+                        $opRaw   = getCsvVal($data, $hdrMap, 'operador');
+
+                        $id_sucursal = $sucNom === '' ? $idEulalia : getSucursalIdPorNombre($conn, $sucNom, $sucursalCache);
+                        [$operador, $opValido] = normalizarOperador($opRaw);
 
                         $estatus = 'OK'; $motivo = 'Listo para insertar';
                         if ($iccid === '') { $estatus='Ignorada'; $motivo='ICCID vacío'; }
@@ -131,7 +156,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'previ
                         $contador['total']++;
                         if ($estatus === 'OK') $contador['ok']++; else $contador['ignoradas']++;
                         if (count($previewRows) < PREVIEW_LIMIT) {
-                            $previewRows[] = compact('iccid','dn','caja','nombre_sucursal','operador','estatus','motivo');
+                            $previewRows[] = [
+                                'iccid'=>$iccid,'dn'=>$dn,'caja'=>$caja,'lote'=>$lote,
+                                'nombre_sucursal'=>$sucNom,'operador'=>$operador,
+                                'estatus'=>$estatus,'motivo'=>$motivo
+                            ];
                         }
                     }
                     fclose($fh);
@@ -158,24 +187,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'inser
     header('Content-Type: text/csv; charset=UTF-8');
     header('Content-Disposition: attachment; filename="reporte_carga_sims.csv"');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['iccid','dn','caja','sucursal','operador','estatus_final','motivo']);
+    fputcsv($out, ['iccid','dn','caja','lote','sucursal','operador','estatus_final','motivo']);
 
-    $sqlInsert = "INSERT INTO inventario_sims (iccid,dn,caja_id,id_sucursal,operador,estatus,fecha_ingreso)
-                  VALUES (?,?,?,?,?,'Disponible',NOW())";
+    // Nuevo: incluye columna LOTE (nullable)
+    $sqlInsert = "INSERT INTO inventario_sims (iccid,dn,caja_id,lote,id_sucursal,operador,estatus,fecha_ingreso)
+                  VALUES (?,?,?,?,?,?,'Disponible',NOW())";
     $stmtInsert = $conn->prepare($sqlInsert);
 
     $fh = fopen($tmpPath, 'r');
-    $fila = 0;
+    $fila = 0; $hdrMap = null;
     while (($data = fgetcsv($fh, 0, ",")) !== false) {
-        $fila++; if ($fila === 1) continue;
-        $iccid = trim($data[0] ?? '');
-        $dn    = trim($data[1] ?? '');
-        $caja  = trim($data[2] ?? '');
-        $nombre_sucursal = trim($data[3] ?? '');
-        $operadorRaw     = trim($data[4] ?? '');
+        $fila++;
+        if ($fila === 1) { $hdrMap = buildHeaderMap($data); continue; }
 
-        $id_sucursal = $nombre_sucursal === '' ? $idEulalia : getSucursalIdPorNombre($conn, $nombre_sucursal, $sucursalCache);
-        [$operador, $opValido] = normalizarOperador($operadorRaw);
+        $iccid   = getCsvVal($data, $hdrMap, 'iccid');
+        $dn      = getCsvVal($data, $hdrMap, 'dn');
+        $caja    = getCsvVal($data, $hdrMap, 'caja_id');
+        $lote    = getCsvVal($data, $hdrMap, 'lote');    // puede venir vacío
+        $sucNom  = getCsvVal($data, $hdrMap, 'sucursal');
+        $opRaw   = getCsvVal($data, $hdrMap, 'operador');
+
+        $id_sucursal = $sucNom === '' ? $idEulalia : getSucursalIdPorNombre($conn, $sucNom, $sucursalCache);
+        [$operador, $opValido] = normalizarOperador($opRaw);
 
         $estatusFinal='Ignorada'; $motivo='N/A';
 
@@ -190,11 +223,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'inser
             if($stmtDup->num_rows>0){
                 $motivo='Duplicado';
             } else {
-                // DN vacío -> NULL si la columna lo permite; en caso contrario, cadena vacía
-                $dnParam = ($dn === '') ? ($dnPermiteNull ? null : '') : $dn;
+                // DN vacío -> NULL si la columna lo permite
+                $dnParam   = ($dn === '')   ? ($dnPermiteNull   ? null : '') : $dn;
+                // LOTE vacío -> NULL si la columna lo permite
+                $loteParam = ($lote === '') ? ($lotePermiteNull ? null : '') : $lote;
 
-                // Tipos: iccid(s), dn(s), caja(s), id_sucursal(i), operador(s)
-                $stmtInsert->bind_param("sssis", $iccid, $dnParam, $caja, $id_sucursal, $operador);
+                // Tipos: iccid(s), dn(s), caja(s), lote(s), id_sucursal(i), operador(s)
+                $stmtInsert->bind_param("ssssis", $iccid, $dnParam, $caja, $loteParam, $id_sucursal, $operador);
 
                 if($stmtInsert->execute()){
                     $estatusFinal='Insertada'; $motivo='OK';
@@ -205,7 +240,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'inser
             $stmtDup->close();
         }
 
-        fputcsv($out, [$iccid,$dn,$caja,$nombre_sucursal,$operador,$estatusFinal,$motivo]);
+        fputcsv($out, [$iccid,$dn,$caja,$lote,$sucNom,$operador,$estatusFinal,$motivo]);
     }
     fclose($fh); fclose($out);
     @unlink($tmpPath);
@@ -235,11 +270,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'inser
         <div class="card p-4 shadow-sm bg-white">
             <h5>Subir Archivo CSV</h5>
             <p>
-               Columnas: <b>iccid, dn, caja_id, sucursal, operador</b>.<br>
-               <b>dn</b> (opcional)<br>
+               Columnas (recomendado): <b>iccid, dn, caja_id, lote, sucursal, operador</b>.<br>
+               <b>dn</b> y <b>lote</b> son opcionales; si vienen vacíos, se guardan como <b>NULL</b>.<br>
                Si <b>sucursal</b> está vacía, se asigna <b>Eulalia</b>.<br>
                Si <b>operador</b> está vacío, se usa <b>Bait</b>.<br>
-               Permitidos: <b>Bait, AT&amp;T, Virgin, Unefon, Telcel, Movistar</b>.
+               Admitimos encabezados equivalentes: <code>caja_id</code>, <code>id_caja</code> o <code>caja</code>.
             </p>
             <form method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="preview">
@@ -253,13 +288,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'inser
             <p>Total filas: <b><?= $contador['total'] ?></b> | OK: <b class="text-success"><?= $contador['ok'] ?></b> | Ignoradas: <b class="text-danger"><?= $contador['ignoradas'] ?></b></p>
             <div class="table-responsive">
                 <table class="table table-bordered table-sm">
-                    <thead class="table-light"><tr><th>ICCID</th><th>DN</th><th>Caja</th><th>Sucursal</th><th>Operador</th><th>Estatus</th><th>Motivo</th></tr></thead>
+                    <thead class="table-light">
+                      <tr><th>ICCID</th><th>DN</th><th>Caja</th><th>Lote</th><th>Sucursal</th><th>Operador</th><th>Estatus</th><th>Motivo</th></tr>
+                    </thead>
                     <tbody>
                     <?php foreach ($previewRows as $r): ?>
                         <tr class="<?= ($r['estatus']==='OK')?'':'table-warning' ?>">
                             <td><?= htmlspecialchars($r['iccid']) ?></td>
                             <td><?= htmlspecialchars($r['dn']) ?></td>
                             <td><?= htmlspecialchars($r['caja']) ?></td>
+                            <td><?= htmlspecialchars($r['lote']) ?></td>
                             <td><?= htmlspecialchars($r['nombre_sucursal']) ?></td>
                             <td><?= htmlspecialchars($r['operador']) ?></td>
                             <td><?= htmlspecialchars($r['estatus']) ?></td>

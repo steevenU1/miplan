@@ -1,5 +1,5 @@
 <?php
-// inventario_sims_resumen.php — Central 2.0 (FINAL)
+// inventario_sims_resumen.php — Central 2.0 (FINAL corregido)
 // - Filtro por caja robusto: detecta columna (caja_id | id_caja | caja), usa TRIM, soporta VARCHAR/INT.
 // - Export CSV toma los valores actuales del formulario (no exige "Aplicar") y respeta caja/sucursal/rol.
 // - Si el select de sucursal está disabled (vista "Por sucursal"), se envía por <input hidden> para no vaciar el export.
@@ -35,7 +35,8 @@ function detectarColCaja(mysqli $conn): string {
             WHERE TABLE_SCHEMA = DATABASE()
               AND TABLE_NAME = 'inventario_sims'
               AND COLUMN_NAME = '$colEsc' LIMIT 1";
-    if ($conn->query($sql)->fetch_row()){ return $col; }
+    $q = $conn->query($sql);
+    if ($q && $q->fetch_row()){ return $col; }
   }
   return 'caja_id'; // fallback
 }
@@ -43,7 +44,7 @@ function detectarColCaja(mysqli $conn): string {
 function condCajaNoVacia(string $expr): string {
   return "NULLIF(TRIM($expr),'') IS NOT NULL AND TRIM($expr) <> '0'";
 }
-/** Ordena por número y luego texto (si aplica). */
+/** Orden sugerida (queda para otros usos) */
 function orderCaja(string $expr): string {
   return "CAST(TRIM($expr) AS UNSIGNED), TRIM($expr)";
 }
@@ -86,16 +87,19 @@ if (isAdmin($ROL)) {
   $sucursales = $rs->fetch_all(MYSQLI_ASSOC);
 }
 
-/* ===== Cajas (si hay sucursal concreta) ===== */
+/* ===== Cajas (si hay sucursal concreta) — FIX DISTINCT+ORDER BY ===== */
 $cajas = [];
 if ($haySucursalConcreta) {
   $sqlCajas = "
-    SELECT DISTINCT TRIM(i.$CAJA_COL) AS caja_val
+    SELECT DISTINCT
+      TRIM(i.$CAJA_COL)                   AS caja_val,
+      CAST(TRIM(i.$CAJA_COL) AS UNSIGNED) AS caja_num
     FROM inventario_sims i
     WHERE i.estatus='Disponible'
-      AND i.id_sucursal=?
+      AND i.id_sucursal = ?
       AND ".condCajaNoVacia("i.$CAJA_COL")."
-    ORDER BY ".orderCaja("i.$CAJA_COL");
+    ORDER BY caja_num, caja_val
+  ";
   $st = $conn->prepare($sqlCajas);
   $st->bind_param('i', $selSucursal);
   $st->execute();
@@ -104,6 +108,7 @@ if ($haySucursalConcreta) {
     $val = (string)$r['caja_val'];
     $cajas[$val] = $val; // puede ser "1", "01", "A-01", etc.
   }
+  $st->close();
 }
 
 /* ===== KPIs ===== */
@@ -402,7 +407,7 @@ require_once __DIR__ . '/navbar.php';
                  ]))); ?>">
                 Ver detalle
               </a>
-              <!-- Export rápido desde tarjeta: fuerza esa sucursal y conserva los filtros (incluida caja) -->
+              <!-- Export rápido desde tarjeta -->
               <button class="btn btn-sm btn-outline-success" type="submit" form="filtros" name="export" value="1"
                 onclick="(function(f){
                   const sel = f.querySelector('select[name=sucursal]');
