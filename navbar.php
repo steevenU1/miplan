@@ -212,7 +212,7 @@ $grpVentas     = [
   'historial_payjoy_tc.php',
   'historial_ventas_accesorios.php' // ✅ nuevo
 ];
-$grpInventario = ['panel.php', 'inventario_subdistribuidor.php', 'inventario_global.php', 'inventario_resumen.php', 'inventario_eulalia.php', 'inventario_retiros.php', 'generar_traspaso_zona.php', 'traspasos_pendientes_zona.php', 'inventario_sims_resumen.php'];
+$grpInventario = ['panel.php', 'inventario_subdistribuidor.php', 'inventario_global.php', 'inventario_resumen.php', 'inventario_general.php', 'inventario_retiros.php', 'generar_traspaso_zona.php', 'traspasos_pendientes_zona.php', 'inventario_sims_resumen.php'];
 $grpCompras    = ['compras_nueva.php', 'compras_resumen.php', 'modelos.php', 'proveedores.php', 'compras_ingreso.php'];
 $grpTraspasos  = ['generar_traspaso.php', 'generar_traspaso_sims.php', 'traspasos_sims_pendientes.php', 'traspasos_sims_salientes.php', 'traspasos_pendientes.php', 'traspasos_salientes.php', 'traspaso_nuevo.php'];
 $grpEfectivo   = ['cobros.php', 'cortes_caja.php', 'generar_corte.php', 'depositos_sucursal.php', 'depositos.php', 'recoleccion_comisiones.php'];
@@ -730,7 +730,7 @@ function item_active(string $f, string $c): string
                 </li>
                 <li class="dropdown-header">Administrador</li>
                 <li><a class="dropdown-item <?= item_active('inventario_resumen.php', $current) ?>" href="inventario_resumen.php">Resumen Global</a></li>
-                <li><a class="dropdown-item <?= item_active('inventario_eulalia.php', $current) ?>" href="inventario_eulalia.php">Inventario Almacén</a></li>
+                <li><a class="dropdown-item <?= item_active('inventario_general.php', $current) ?>" href="inventario_general.php">Inventario Almacén</a></li>
                 <li><a class="dropdown-item <?= item_active('inventario_retiros.php', $current) ?>" href="inventario_retiros.php">🛑 Retiros de Inventario</a></li>
               <?php endif; ?>
             <?php endif; ?>

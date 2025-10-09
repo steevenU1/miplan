@@ -9,44 +9,121 @@ require_once __DIR__.'/navbar.php';
 $idUsuario = (int)($_SESSION['id_usuario'] ?? 0);
 if (!function_exists('h')) { function h($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); } }
 
-// ===============================
-// 1) Resolver ID de “Luga Eulalia” (tolerante)
-// ===============================
-$idEulalia = 0; $nombreEulalia = 'Luga Eulalia';
-if ($st = $conn->prepare("SELECT id,nombre FROM sucursales WHERE LOWER(nombre) IN ('luga eulalia','eulalia') LIMIT 1")) {
-  $st->execute(); if ($r = $st->get_result()->fetch_assoc()) { $idEulalia=(int)$r['id']; $nombreEulalia=$r['nombre']; } $st->close();
-}
-if ($idEulalia <= 0) {
-  $rs = $conn->query("SELECT id,nombre FROM sucursales WHERE LOWER(nombre) LIKE '%eulalia%' ORDER BY LENGTH(nombre) ASC LIMIT 1");
-  if ($rs && ($r = $rs->fetch_assoc())) { $idEulalia=(int)$r['id']; $nombreEulalia=$r['nombre']; }
-}
-if ($idEulalia <= 0) { echo "<div class='container my-4'><div class='alert alert-danger'>No se localizó la sucursal “Luga Eulalia”.</div></div>"; exit(); }
+/* ============================================================
+   1) Resolver ID de almacén principal (Mi Plan o Luga)
+      Prioridad:
+      - "MP Almacen General" / "MP Almacén General"
+      - "Almacen General" / "Almacén General" / "Almacen Central" / "Almacén Central"
+      - "Luga Eulalia" / "Eulalia"
+      - Cualquier sucursal que contenga "almacen"/"almacén"
+      - Primer registro (fallback) => NO tronar la vista
+   ============================================================ */
+$nombreAlmacen = '';      // Nombre resuelto para mostrar
+$idAlmacen     = 0;       // ID resuelto para usar como default
+$warnFallback  = '';      // Alerta si no se encontró la coincidencia ideal
 
-// ===============================
-// 2) Catálogo de sucursales + sucursal seleccionada
-// ===============================
+// Candidatos exactos en orden de preferencia (minúsculas y sin depender de acentos)
+$candidatosExactos = [
+  'mp almacen general',
+  'mp almacén general',
+  'almacen general',
+  'almacén general',
+  'almacen central',
+  'almacén central',
+  'luga eulalia',
+  'eulalia',
+];
+
+function buscarExacto(mysqli $conn, string $needle): ?array {
+  $sql = "SELECT id, nombre FROM sucursales WHERE LOWER(nombre) = ? LIMIT 1";
+  if ($st = $conn->prepare($sql)) {
+    $st->bind_param('s', $needle);
+    $st->execute();
+    $res = $st->get_result()->fetch_assoc();
+    $st->close();
+    return $res ?: null;
+  }
+  return null;
+}
+
+function buscarLike(mysqli $conn, string $pattern): ?array {
+  $sql = "SELECT id, nombre FROM sucursales WHERE LOWER(nombre) LIKE ? ORDER BY LENGTH(nombre) ASC LIMIT 1";
+  if ($st = $conn->prepare($sql)) {
+    $st->bind_param('s', $pattern);
+    $st->execute();
+    $res = $st->get_result()->fetch_assoc();
+    $st->close();
+    return $res ?: null;
+  }
+  return null;
+}
+
+// 1.a) Intentos exactos en orden
+foreach ($candidatosExactos as $cand) {
+  $r = buscarExacto($conn, $cand);
+  if ($r) { $idAlmacen = (int)$r['id']; $nombreAlmacen = $r['nombre']; break; }
+}
+
+// 1.b) Si no se halló exacto, probar patrones
+if ($idAlmacen <= 0) {
+  $patrones = [
+    '%mp%almacen%general%',
+    '%almacen%general%',
+    '%almacen%central%',
+    '%eulalia%',
+  ];
+  foreach ($patrones as $pat) {
+    $r = buscarLike($conn, $pat);
+    if ($r) { $idAlmacen = (int)$r['id']; $nombreAlmacen = $r['nombre']; break; }
+  }
+}
+
+// 1.c) Fallbacks finales sin romper la vista
+if ($idAlmacen <= 0) {
+  // Preferir cualquier sucursal que contenga "almacen"/"almacén"
+  $r = $conn->query("SELECT id, nombre FROM sucursales WHERE LOWER(nombre) LIKE '%almacen%' OR LOWER(nombre) LIKE '%almacén%' ORDER BY LENGTH(nombre) ASC LIMIT 1");
+  if ($r && ($row = $r->fetch_assoc())) {
+    $idAlmacen = (int)$row['id']; $nombreAlmacen = $row['nombre'];
+    $warnFallback = "No se encontró “MP Almacen General” ni “Eulalia”. Usando “{$nombreAlmacen}” como almacén por defecto.";
+  }
+}
+
+if ($idAlmacen <= 0) {
+  // Último recurso: primera sucursal (para no romper)
+  $r = $conn->query("SELECT id, nombre FROM sucursales ORDER BY id ASC LIMIT 1");
+  if ($r && ($row = $r->fetch_assoc())) {
+    $idAlmacen = (int)$row['id']; $nombreAlmacen = $row['nombre'];
+    $warnFallback = "No se encontró un almacén conocido. Usando “{$nombreAlmacen}” como predeterminado.";
+  }
+}
+
+/* ============================================================
+   2) Catálogo de sucursales + sucursal seleccionada
+   ============================================================ */
 $sucursales = [];
 $resSuc = $conn->query("SELECT id, nombre FROM sucursales ORDER BY nombre ASC");
 while ($row = $resSuc->fetch_assoc()) $sucursales[] = $row;
 
 $idSucursalSel = (int)($_GET['sucursal'] ?? 0);
-if ($idSucursalSel <= 0) $idSucursalSel = $idEulalia;
+if ($idSucursalSel <= 0) $idSucursalSel = $idAlmacen;
+
 $nomSucursalSel = null;
 foreach ($sucursales as $s) { if ((int)$s['id'] === $idSucursalSel) { $nomSucursalSel = $s['nombre']; break; } }
-if (!$nomSucursalSel) { $idSucursalSel = $idEulalia; $nomSucursalSel = $nombreEulalia; }
+if (!$nomSucursalSel) { $idSucursalSel = $idAlmacen; $nomSucursalSel = $nombreAlmacen; }
 
-// ===============================
-// 3) Alerts
-// ===============================
+/* ============================================================
+   3) Alerts
+   ============================================================ */
 $mensaje = $_GET['msg'] ?? '';
 $alert   = '';
-if ($mensaje === 'ok')      $alert = "<div class='alert alert-success my-3'>✅ Retiro realizado correctamente.</div>";
-elseif ($mensaje === 'revok') $alert = "<div class='alert alert-success my-3'>✅ Reversión aplicada.</div>";
-elseif ($mensaje === 'err')  { $err=h($_GET['errdetail'] ?? 'Ocurrió un error.'); $alert="<div class='alert alert-danger my-3'>❌ $err</div>"; }
+if ($mensaje === 'ok')         $alert = "<div class='alert alert-success my-3'>✅ Retiro realizado correctamente.</div>";
+elseif ($mensaje === 'revok')  $alert = "<div class='alert alert-success my-3'>✅ Reversión aplicada.</div>";
+elseif ($mensaje === 'err')   { $err=h($_GET['errdetail'] ?? 'Ocurrió un error.'); $alert="<div class='alert alert-danger my-3'>❌ $err</div>"; }
+if ($warnFallback !== '')      $alert .= "<div class='alert alert-warning my-3'>⚠️ ".h($warnFallback)."</div>";
 
-// ===============================
-// 4) Inventario disponible (por sucursal seleccionada)
-// ===============================
+/* ============================================================
+   4) Inventario disponible (por sucursal seleccionada)
+   ============================================================ */
 $f_q = trim($_GET['q'] ?? '');
 $params = [];
 $sql = "
@@ -68,9 +145,9 @@ $types = ''; $binds = []; foreach ($params as $p) { $types.=$p[0]; $binds[]=$p[1
 $stmt = $conn->prepare($sql); $stmt->bind_param($types, ...$binds); $stmt->execute();
 $itemsDisponibles = $stmt->get_result()->fetch_all(MYSQLI_ASSOC); $stmt->close();
 
-// ===============================
-// 5) Historial (últimos 200 por sucursal)
-// ===============================
+/* ============================================================
+   5) Historial (últimos 200 por sucursal)
+   ============================================================ */
 $h_motivo = $_GET['h_motivo'] ?? '';
 $h_qfolio = trim($_GET['h_folio'] ?? '');
 $h_estado= $_GET['h_estado'] ?? '';
@@ -96,16 +173,16 @@ $types=''; $binds=[]; foreach($histParams as $p){ $types.=$p[0]; $binds[]=$p[1];
 $stmt=$conn->prepare($histSql); $stmt->bind_param($types, ...$binds); $stmt->execute();
 $historial=$stmt->get_result()->fetch_all(MYSQLI_ASSOC); $stmt->close();
 
-// ===============================
-// 6) KPIs
-// ===============================
+/* ============================================================
+   6) KPIs
+   ============================================================ */
 $disponibles=count($itemsDisponibles);
 $vigentes=0; $revertidos=0; $totalRetirados=0; $ultimo='';
 foreach($historial as $h){ $totalRetirados+=(int)$h['cantidad']; if((int)$h['revertido']===1)$revertidos++; else $vigentes++; if($ultimo==='' && !empty($h['fecha'])) $ultimo=$h['fecha']; }
 
-// ===============================
-// 7) Templates de detalle con checkboxes para reversión parcial
-// ===============================
+/* ============================================================
+   7) Templates de detalle con checkboxes para reversión parcial
+   ============================================================ */
 $detailTemplates = [];
 foreach ($historial as $h) {
   ob_start();
@@ -186,9 +263,9 @@ foreach ($historial as $h) {
   $detailTemplates[] = ob_get_clean();
 }
 
-// ===============================
-// 8) Buscador de IMEI en retiros (en la sucursal seleccionada)
-// ===============================
+/* ============================================================
+   8) Buscador de IMEI en retiros (en la sucursal seleccionada)
+   ============================================================ */
 $findImei = trim($_GET['find_imei'] ?? '');
 $imeiRows = [];
 if ($findImei !== '') {
@@ -566,9 +643,10 @@ if ($findImei !== '') {
   </div>
 </div>
 
-<!-- JS -->
+<!-- JS base -->
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-<!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script> -->
+<!-- Bootstrap JS ACTIVADO para que funcione bootstrap.Modal -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
 <!-- DataTables -->
 <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
@@ -601,10 +679,16 @@ if ($findImei !== '') {
     });
   });
 
-  // === Modal Detalle (carga template con form de reversión parcial)
-  const detalleModal = new bootstrap.Modal(document.getElementById('detalleModal'));
+  // === Modal Detalle (protegido si algo falla)
+  let detalleModal = null;
+  try {
+    if (window.bootstrap && document.getElementById('detalleModal')) {
+      detalleModal = new bootstrap.Modal(document.getElementById('detalleModal'));
+    }
+  } catch(e) { console.warn('Bootstrap Modal no disponible:', e); }
+
   document.addEventListener('click', (e) => {
-    const btn = e.target.closest('.btn-detalle'); if (!btn) return;
+    const btn = e.target.closest('.btn-detalle'); if (!btn || !detalleModal) return;
     const id = btn.getAttribute('data-id'); const folio = btn.getAttribute('data-folio') || '';
     const tpl = document.getElementById('tpl-det-' + id);
     if (tpl) {
@@ -617,6 +701,12 @@ if ($findImei !== '') {
   // === Carrito persistente por sucursal (localStorage)
   const sucursalId = <?= (int)$idSucursalSel ?>;
   const storeKey = `retiros:sel:${sucursalId}`;
+
+  // Limpiar carrito tras éxito (?msg=ok)
+  const clearOnSuccess = <?= ($mensaje === 'ok') ? 'true' : 'false' ?>;
+  if (clearOnSuccess) localStorage.removeItem(storeKey);
+
+  // NO duplicar esta línea
   let carrito = new Set(JSON.parse(localStorage.getItem(storeKey) || '[]'));
 
   const chkAll = document.getElementById('chkAll');
@@ -627,25 +717,27 @@ if ($findImei !== '') {
   const btnClearSel = document.getElementById('btnClearSel');
 
   function persist(){ localStorage.setItem(storeKey, JSON.stringify(Array.from(carrito))); }
-  function syncChecksFromCarrito(){
-    document.querySelectorAll('.chk-item').forEach(chk=>{
-      const id = parseInt(chk.dataset.id,10); chk.checked = carrito.has(id);
-    });
-    updatePanel();
-  }
   function updatePanel(){
     const visibleSelected = Array.from(document.querySelectorAll('.chk-item')).filter(c=>c.checked).length;
     const total = carrito.size;
     selCount.textContent = total;
     selExtra.textContent = (total>visibleSelected) ? `(+${total-visibleSelected} fuera de este listado)` : '';
     panelSel.style.display = total>0 ? 'flex' : 'none';
-    // actualizar master checkbox: solo marca visibles
     const visibles = document.querySelectorAll('.chk-item').length;
-    chkAll.checked = (visibles>0 && visibleSelected === visibles);
-    chkAll.indeterminate = (visibleSelected>0 && visibleSelected<visibles);
+    if (chkAll) {
+      chkAll.checked = (visibles>0 && visibleSelected === visibles);
+      chkAll.indeterminate = (visibleSelected>0 && visibleSelected<visibles);
+    }
+  }
+  function syncChecksFromCarrito(){
+    document.querySelectorAll('.chk-item').forEach(chk=>{
+      const id = parseInt(chk.dataset.id,10);
+      chk.checked = carrito.has(id);
+    });
+    updatePanel();
   }
 
-  // marcar/ desmarcar visibles
+  // Master checkbox
   chkAll?.addEventListener('change', e=>{
     document.querySelectorAll('.chk-item').forEach(chk=>{
       const id = parseInt(chk.dataset.id,10);
@@ -655,7 +747,7 @@ if ($findImei !== '') {
     persist(); updatePanel();
   });
 
-  // eventos por fila
+  // Eventos por fila
   document.querySelectorAll('.chk-item').forEach(chk=>{
     chk.addEventListener('change', ()=>{
       const id = parseInt(chk.dataset.id,10);
@@ -664,7 +756,7 @@ if ($findImei !== '') {
     });
   });
 
-  // ver seleccionados (marca los que estén en la tabla; útil tras una búsqueda)
+  // Ver seleccionados
   btnVerSel?.addEventListener('click', ()=>{
     document.querySelectorAll('.chk-item').forEach(chk=>{
       const id = parseInt(chk.dataset.id,10);
@@ -673,15 +765,21 @@ if ($findImei !== '') {
     updatePanel();
   });
 
-  // vaciar carrito
+  // Vaciar carrito
   btnClearSel?.addEventListener('click', ()=>{
     if (!confirm('¿Vaciar la selección?')) return;
     carrito.clear(); persist(); syncChecksFromCarrito();
   });
 
-  // Modal Resumen (construye lista desde los visibles y muestra contador total)
+  // Modal Resumen
   const formRetiro = document.getElementById('formRetiro');
-  const confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+  let confirmModal = null;
+  try {
+    if (window.bootstrap && document.getElementById('confirmModal')) {
+      confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+    }
+  } catch(e) { console.warn('Bootstrap Modal no disponible:', e); }
+
   document.getElementById('btnResumen')?.addEventListener('click', ()=>{
     if (carrito.size===0){ alert('No hay equipos seleccionados.'); return; }
     document.getElementById('resMotivo').textContent  = document.getElementById('motivo').value || '—';
@@ -691,7 +789,6 @@ if ($findImei !== '') {
 
     const tbody = document.getElementById('resumenBody'); tbody.innerHTML = '';
     let idx=0;
-    // Solo listamos los visibles con datos (los no visibles igual se mandan)
     document.querySelectorAll('.chk-item:checked').forEach(chk=>{
       const tr = chk.closest('tr'); const c = tr.querySelectorAll('td');
       const row = document.createElement('tr');
@@ -705,10 +802,10 @@ if ($findImei !== '') {
       tr.innerHTML = `<td colspan="7" class="text-muted">+ ${extras} seleccionados fuera de este listado</td>`;
       tbody.appendChild(tr);
     }
-    confirmModal.show();
+    confirmModal?.show();
   });
 
-  // Submit: inyecta TODOS los IDs del carrito como inputs hidden (evita perder selección entre búsquedas)
+  // Submit: inyectar todos los IDs del carrito
   document.getElementById('btnConfirmarEnviar')?.addEventListener('click', ()=>{
     if (carrito.size===0){ alert('No hay equipos seleccionados.'); return; }
     const cont = document.getElementById('selHidden'); cont.innerHTML='';
@@ -724,7 +821,7 @@ if ($findImei !== '') {
     if (e.key === 'Enter') { e.preventDefault(); document.getElementById('searchForm').submit(); }
   });
 
-  // Al cargar, reflejamos carrito en los checkboxes actuales
+  // Inicial
   syncChecksFromCarrito();
 </script>
 </body>
