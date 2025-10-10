@@ -1,28 +1,26 @@
 <?php
+/* depositos_sucursal.php — Depósitos por sucursal (Gerente/Admin y Ejecutivo sin Gerente)
+   - Opción "Efectivo" agregada a bancos (resaltable, NO predeterminada)
+   - Select obliga a elegir (required) y no trae valor por defecto
+   - Sincroniza select -> hidden "banco"
+   - Validaciones de archivo, referencia, monto y banco permitido
+*/
 session_start();
-if (!isset($_SESSION['id_usuario'])) {
-    header("Location: index.php");
-    exit();
-}
+if (!isset($_SESSION['id_usuario'])) { header("Location: index.php"); exit(); }
 
 require_once 'db.php';
 
 $rol        = $_SESSION['rol'] ?? '';
 $idSucursal = (int)($_SESSION['id_sucursal'] ?? 0);
 
-/*
-  Permisos:
-  - Gerente / Admin => siempre
-  - Ejecutivo       => solo si su sucursal NO tiene gerente activo
-*/
-$hayGerente = true; // por seguridad, asumir que sí hay
+/* Permisos:
+   - Gerente/Admin => siempre
+   - Ejecutivo     => solo si su sucursal NO tiene gerente activo */
+$hayGerente = true;
 if ($idSucursal > 0) {
     if ($st = $conn->prepare("
-        SELECT COUNT(*)
-        FROM usuarios
-        WHERE id_sucursal = ?
-          AND rol IN ('Gerente','GerenteSucursal')
-          AND activo = 1
+        SELECT COUNT(*) FROM usuarios
+        WHERE id_sucursal=? AND rol IN ('Gerente','GerenteSucursal') AND activo=1
     ")) {
         $st->bind_param("i", $idSucursal);
         $st->execute();
@@ -32,12 +30,8 @@ if ($idSucursal > 0) {
         $hayGerente = ((int)$cnt > 0);
     }
 }
-
 $allow = in_array($rol, ['Gerente','Admin'], true) || ($rol === 'Ejecutivo' && !$hayGerente);
-if (!$allow) {
-    header("Location: 403.php");
-    exit();
-}
+if (!$allow) { header("Location: 403.php"); exit(); }
 
 include 'navbar.php';
 
@@ -53,33 +47,25 @@ $ALLOWED   = [
   'image/png'       => 'png',
 ];
 
-// Bancos permitidos (lista blanca)
+/* Bancos permitidos (incluye EFECTIVO) */
 $ALLOWED_BANKS = [
+  'Efectivo', // caja en efectivo
   'BBVA','Citibanamex','Banorte','Santander','HSBC','Scotiabank',
   'Inbursa','Banco Azteca','BanCoppel','Banregio','Afirme',
   'Banco del Bajío','Banca Mifel','Compartamos Banco'
 ];
 
-/* ------- helper: guardar comprobante para un depósito ------- */
+/* ------- helper: guardar comprobante ------- */
 function guardar_comprobante(mysqli $conn, int $deposito_id, array $file, int $idUsuario, int $MAX_BYTES, array $ALLOWED, &$errMsg): bool {
-  if (!isset($file['error']) || $file['error'] === UPLOAD_ERR_NO_FILE) {
-    $errMsg = 'Debes adjuntar el comprobante.'; return false;
-  }
-  if ($file['error'] !== UPLOAD_ERR_OK) {
-    $errMsg = 'Error al subir archivo (código '.$file['error'].').'; return false;
-  }
-  if ($file['size'] <= 0 || $file['size'] > $MAX_BYTES) {
-    $errMsg = 'El archivo excede 10 MB o está vacío.'; return false;
-  }
+  if (!isset($file['error']) || $file['error'] === UPLOAD_ERR_NO_FILE) { $errMsg = 'Debes adjuntar el comprobante.'; return false; }
+  if ($file['error'] !== UPLOAD_ERR_OK) { $errMsg = 'Error al subir archivo (código '.$file['error'].').'; return false; }
+  if ($file['size'] <= 0 || $file['size'] > $MAX_BYTES) { $errMsg = 'El archivo excede 10 MB o está vacío.'; return false; }
 
   $finfo = new finfo(FILEINFO_MIME_TYPE);
   $mime  = $finfo->file($file['tmp_name']) ?: 'application/octet-stream';
-  if (!isset($ALLOWED[$mime])) {
-    $errMsg = 'Tipo de archivo no permitido. Solo PDF/JPG/PNG.'; return false;
-  }
+  if (!isset($ALLOWED[$mime])) { $errMsg = 'Tipo de archivo no permitido. Solo PDF/JPG/PNG.'; return false; }
   $ext = $ALLOWED[$mime];
 
-  // Carpeta destino
   $baseDir = __DIR__ . '/uploads/depositos/' . $deposito_id;
   if (!is_dir($baseDir)) {
     @mkdir($baseDir, 0775, true);
@@ -87,47 +73,38 @@ function guardar_comprobante(mysqli $conn, int $deposito_id, array $file, int $i
       file_put_contents($baseDir.'/.htaccess', "Options -Indexes\n<FilesMatch \"\\.(php|phar|phtml|shtml|cgi|pl)$\">\nDeny from all\n</FilesMatch>\n");
     }
   }
-
   $storedName = 'comprobante.' . $ext;
   $fullPath   = $baseDir . '/' . $storedName;
   if (file_exists($fullPath)) @unlink($fullPath);
-
-  if (!move_uploaded_file($file['tmp_name'], $fullPath)) {
-    $errMsg = 'No se pudo guardar el archivo en el servidor.'; return false;
-  }
+  if (!move_uploaded_file($file['tmp_name'], $fullPath)) { $errMsg = 'No se pudo guardar el archivo en el servidor.'; return false; }
 
   $relPath = 'uploads/depositos/' . $deposito_id . '/' . $storedName;
   $orig    = substr(basename($file['name']), 0, 200);
-
   $stmt = $conn->prepare("
     UPDATE depositos_sucursal SET
-      comprobante_archivo = ?, comprobante_nombre = ?, comprobante_mime = ?,
-      comprobante_size = ?, comprobante_subido_en = NOW(), comprobante_subido_por = ?
-    WHERE id = ?
+      comprobante_archivo=?, comprobante_nombre=?, comprobante_mime=?,
+      comprobante_size=?, comprobante_subido_en=NOW(), comprobante_subido_por=?
+    WHERE id=?
   ");
   $size = (int)$file['size'];
   $stmt->bind_param('sssiii', $relPath, $orig, $mime, $size, $idUsuario, $deposito_id);
   $ok = $stmt->execute();
   $stmt->close();
 
-  if (!$ok) {
-    @unlink($fullPath);
-    $errMsg = 'Error al actualizar el depósito con el comprobante.';
-    return false;
-  }
+  if (!$ok) { @unlink($fullPath); $errMsg = 'Error al actualizar el depósito con el comprobante.'; return false; }
   return true;
 }
 
-/* ------- Registrar DEPÓSITO (referencia OBLIGATORIA y NUMÉRICA) ------- */
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['accion']==='registrar') {
+/* ------- Registrar DEPÓSITO ------- */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '')==='registrar') {
   $id_corte        = (int)($_POST['id_corte'] ?? 0);
   $fecha_deposito  = $_POST['fecha_deposito'] ?? date('Y-m-d');
-  $banco           = trim($_POST['banco'] ?? ''); // viene del hidden sincronizado
+  $banco           = trim($_POST['banco'] ?? ''); // hidden sincronizado
   $monto           = (float)($_POST['monto_depositado'] ?? 0);
   $referencia      = trim($_POST['referencia'] ?? '');
   $motivo          = trim($_POST['motivo'] ?? '');
 
-  // 1) Validar archivo obligatorio (antes de tocar BD)
+  // Validar archivo antes de tocar BD
   if (!isset($_FILES['comprobante']) || $_FILES['comprobante']['error'] === UPLOAD_ERR_NO_FILE) {
     $msg = "<div class='alert alert-warning shadow-sm'>⚠ Debes adjuntar el comprobante del depósito.</div>";
   } elseif ($_FILES['comprobante']['error'] !== UPLOAD_ERR_OK) {
@@ -135,21 +112,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
   } elseif ($_FILES['comprobante']['size'] <= 0 || $_FILES['comprobante']['size'] > $MAX_BYTES) {
     $msg = "<div class='alert alert-warning shadow-sm'>⚠ El comprobante debe pesar hasta 10 MB.</div>";
   } else {
-    // Validar MIME permitido
+    // MIME permitido
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $mime  = $finfo->file($_FILES['comprobante']['tmp_name']) ?: 'application/octet-stream';
     if (!isset($ALLOWED[$mime])) {
       $msg = "<div class='alert alert-warning shadow-sm'>⚠ Tipo de archivo no permitido. Solo PDF/JPG/PNG.</div>";
     } else {
-      // 2) Validar datos y pendiente del corte
       if ($id_corte>0 && $monto>0 && $banco!=='') {
         if (!in_array($banco, $ALLOWED_BANKS, true)) {
           $msg = "<div class='alert alert-warning shadow-sm'>⚠ Selecciona un banco válido del listado.</div>";
         } else {
+          // Validar pendiente del corte
           $sqlCheck = "SELECT cc.total_efectivo, IFNULL(SUM(ds.monto_depositado),0) AS suma_actual
                        FROM cortes_caja cc
-                       LEFT JOIN depositos_sucursal ds ON ds.id_corte = cc.id
-                       WHERE cc.id = ? GROUP BY cc.id";
+                       LEFT JOIN depositos_sucursal ds ON ds.id_corte=cc.id
+                       WHERE cc.id=? GROUP BY cc.id";
           $stmt = $conn->prepare($sqlCheck);
           $stmt->bind_param("i", $id_corte);
           $stmt->execute();
@@ -161,13 +138,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
             if ($monto > $pendiente + 0.0001) {
               $msg = "<div class='alert alert-danger shadow-sm'>❌ El depósito excede el monto pendiente del corte. Solo queda $".number_format($pendiente,2)."</div>";
             } else {
-              // 3) Insertar y adjuntar (si adjuntar falla, revertimos)
+              // Insertar y adjuntar
               $stmtIns = $conn->prepare("
                 INSERT INTO depositos_sucursal
                   (id_sucursal, id_corte, fecha_deposito, monto_depositado, banco, referencia, observaciones, estado, creado_en)
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'Pendiente', NOW())
               ");
-              // i, i, s, d, s, s, s   ->  id_sucursal, id_corte, fecha, monto, banco, referencia, motivo
               $stmtIns->bind_param("iisdsss", $idSucursal, $id_corte, $fecha_deposito, $monto, $banco, $referencia, $motivo);
               if ($stmtIns->execute()) {
                 $deposito_id = $stmtIns->insert_id;
@@ -180,8 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
                   // revertir
                   $del = $conn->prepare("DELETE FROM depositos_sucursal WHERE id=?");
                   $del->bind_param('i', $deposito_id);
-                  $del->execute();
-                  $del->close();
+                  $del->execute(); $del->close();
                   $msg = "<div class='alert alert-danger shadow-sm'>❌ No se guardó el depósito porque falló el comprobante: ".htmlspecialchars($errUp)."</div>";
                 }
               } else {
@@ -226,7 +201,7 @@ if ($f_q      !== '') {
 }
 $where = implode(' AND ', $conds);
 
-/* ------- Export CSV si se pide ------- */
+/* ------- Export CSV ------- */
 if (isset($_GET['export']) && $_GET['export'] == '1') {
   $sqlExp = "SELECT ds.id, ds.id_corte, cc.fecha_corte, ds.fecha_deposito, ds.monto_depositado,
                     ds.banco, ds.referencia, ds.estado
@@ -241,7 +216,6 @@ if (isset($_GET['export']) && $_GET['export'] == '1') {
 
   header('Content-Type: text/csv; charset=UTF-8');
   header('Content-Disposition: attachment; filename="depositos_'.date('Ymd_His').'.csv"');
-  // BOM para Excel
   echo "\xEF\xBB\xBF";
   $out = fopen('php://output', 'w');
   fputcsv($out, ['ID Depósito','ID Corte','Fecha Corte','Fecha Depósito','Monto','Banco','Referencia','Estado']);
@@ -298,11 +272,9 @@ $stmtHist->execute();
 $historial = $stmtHist->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmtHist->close();
 
-// KPIs rápidos
+// KPIs
 $totalPendiente = 0.0;
-foreach ($cortesPendientes as $c) {
-  $totalPendiente += ((float)$c['total_efectivo'] - (float)$c['total_depositado']);
-}
+foreach ($cortesPendientes as $c) $totalPendiente += ((float)$c['total_efectivo'] - (float)$c['total_depositado']);
 $numCortes = count($cortesPendientes);
 $total_pages = max(1, (int)ceil($total_rows / $per_page));
 ?>
@@ -315,9 +287,7 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <style>
-    :root{
-      --brand1:#0ea5e9; --brand2:#22c55e; --ink:#0f172a; --muted:#6b7280; --surface:#fff;
-    }
+    :root{ --brand1:#0ea5e9; --brand2:#22c55e; --ink:#0f172a; --muted:#6b7280; --surface:#fff; }
     body{ background:#f6f7fb; color:var(--ink); }
     .page-hero{background:linear-gradient(135deg,var(--brand1),var(--brand2));color:#fff;border-radius:18px;padding:18px 20px;box-shadow:0 10px 30px rgba(2,6,23,.18)}
     .page-title{margin:0;font-weight:800;letter-spacing:.3px}
@@ -336,7 +306,6 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
 
     .sticky-head thead th{position:sticky;top:0;z-index:1;background:#fff}
 
-    /* ===== Filtros Modernos ===== */
     .filters-wrap{border:1px solid rgba(0,0,0,.06);background:#fff;border-radius:16px;padding:14px;box-shadow:0 8px 24px rgba(2,6,23,.06)}
     .filters-modern .form-floating>.form-control, .filters-modern .form-floating>.form-select{border-radius:12px;border-color:#e5e7eb}
     .filters-modern .form-floating>label{color:#64748b}
@@ -344,6 +313,11 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
     .filters-chips .badge{background:#f1f5f9;border:1px solid #e2e8f0;color:#0f172a}
     .filters-chips .badge:hover{background:#e2e8f0}
 
+    /* Resalta el select cuando "Efectivo" está activo */
+    .banco-efectivo{
+      outline:2px solid #22c55e; box-shadow:0 0 0 .2rem rgba(34,197,94,.15);
+      border-color:#22c55e !important; font-weight:700;
+    }
     .shadow-soft{box-shadow:0 8px 20px rgba(2,6,23,.06)}
     .btn-soft{border:1px solid rgba(0,0,0,.08);background:#fff}
     .btn-soft:hover{background:#f9fafb}
@@ -368,7 +342,7 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
 
   <?= $msg ?>
 
-  <!-- Cortes pendientes de depósito -->
+  <!-- Cortes pendientes -->
   <div class="card-surface p-3 p-md-4 mb-4">
     <div class="d-flex align-items-center justify-content-between mb-2">
       <h4 class="m-0"><i class="bi bi-list-check me-2"></i>Cortes pendientes de depósito</h4>
@@ -425,9 +399,11 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
 
                     <div class="col-6 col-md-3">
                       <label class="form-label small">Banco</label>
-                      <select class="form-select form-select-sm" name="banco_select" required>
-                        <option value="">Elegir...</option>
-                        <?php foreach ($ALLOWED_BANKS as $b): ?>
+                      <!-- Opción Efectivo visible y resaltable, pero NO seleccionada por defecto -->
+                      <select class="form-select form-select-sm banco-select" name="banco_select" required>
+                        <option value="" selected>Elegir...</option>
+                        <option value="Efectivo">💵 Efectivo (caja)</option>
+                        <?php foreach ($ALLOWED_BANKS as $b): if ($b==='Efectivo') continue; ?>
                           <option><?= htmlspecialchars($b) ?></option>
                         <?php endforeach; ?>
                       </select>
@@ -438,9 +414,11 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
                     <div class="col-6 col-md-2">
                       <label class="form-label small">Referencia
                         <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip" data-bs-placement="top"
-                           title="Es el número de folio, ticket o referencia de tu ticket de depósito"></i>
+                           title="Número de folio/ticket del depósito"></i>
                       </label>
-                      <input type="text" name="referencia" class="form-control form-control-sm" placeholder="Folio/ticket" pattern="^[0-9]+$" inputmode="numeric" required oninput="this.value=this.value.replace(/\D/g,'')">
+                      <input type="text" name="referencia" class="form-control form-control-sm" placeholder="Folio/ticket"
+                             pattern="^[0-9]+$" inputmode="numeric" required
+                             oninput="this.value=this.value.replace(/\\D/g,'')">
                       <div class="invalid-feedback">Requerida y solo dígitos (0–9).</div>
                     </div>
 
@@ -510,7 +488,7 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
             <select name="f_banco" id="f_banco" class="form-select">
               <option value=""></option>
               <?php foreach ($ALLOWED_BANKS as $b): $sel = ($f_banco===$b)?'selected':''; ?>
-                <option <?= $sel ?>><?= htmlspecialchars($b) ?></option>
+                <option value="<?= htmlspecialchars($b) ?>" <?= $sel ?>><?= htmlspecialchars($b) ?></option>
               <?php endforeach; ?>
             </select>
             <label for="f_banco"><i class="bi bi-bank me-1"></i>Banco</label>
@@ -547,7 +525,6 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
       </form>
 
       <?php
-        // Chips de filtros activos (links para limpiar cada uno)
         $chips = [];
         if ($f_q      !== '') $chips[] = ['label' => 'Búsqueda: '.$f_q, 'key' => 'q'];
         if ($f_inicio !== '') $chips[] = ['label' => 'Desde: '.$f_inicio, 'key' => 'f_inicio'];
@@ -635,8 +612,7 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
           $start = max(1, $page-2); $end = min($total_pages, $page+2);
           if ($start>1) echo '<li class="page-item"><a class="page-link" href="'.$base.'&p=1">1</a></li><li class="page-item disabled"><span class="page-link">…</span></li>';
           for($i=$start;$i<=$end;$i++){
-            $active = ($i==$page)?'active':'';
-            echo '<li class="page-item '.$active.'"><a class="page-link" href="'.$base.'&p='.$i.'">'.$i.'</a></li>';
+            $active = ($i==$page)?'active':''; echo '<li class="page-item '.$active.'"><a class="page-link" href="'.$base.'&p='.$i.'">'.$i.'</a></li>';
           }
           if ($end<$total_pages) echo '<li class="page-item disabled"><span class="page-link">…</span></li><li class="page-item"><a class="page-link" href="'.$base.'&p='.$total_pages.'">'.$total_pages.'</a></li>';
         ?>
@@ -649,7 +625,7 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
 
 </div>
 
-<!-- MODAL CONFIRMACIÓN -->
+<!-- Modal de confirmación -->
 <div class="modal fade" id="modalConfirmarDeposito" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">
@@ -659,59 +635,20 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
       </div>
       <div class="modal-body">
         <div class="row g-3">
-          <div class="col-12 col-md-4">
-            <div class="card card-surface p-3">
-              <div class="text-muted small">ID Corte</div>
-              <div id="confCorteId" class="h5 m-0">—</div>
-            </div>
-          </div>
-          <div class="col-12 col-md-4">
-            <div class="card card-surface p-3">
-              <div class="text-muted small">Fecha Corte</div>
-              <div id="confFechaCorte" class="h5 m-0">—</div>
-            </div>
-          </div>
-          <div class="col-12 col-md-4">
-            <div class="card card-surface p-3">
-              <div class="text-muted small">Fecha Depósito</div>
-              <div id="confFechaDeposito" class="h5 m-0">—</div>
-            </div>
-          </div>
+          <div class="col-12 col-md-4"><div class="card card-surface p-3"><div class="text-muted small">ID Corte</div><div id="confCorteId" class="h5 m-0">—</div></div></div>
+          <div class="col-12 col-md-4"><div class="card card-surface p-3"><div class="text-muted small">Fecha Corte</div><div id="confFechaCorte" class="h5 m-0">—</div></div></div>
+          <div class="col-12 col-md-4"><div class="card card-surface p-3"><div class="text-muted small">Fecha Depósito</div><div id="confFechaDeposito" class="h5 m-0">—</div></div></div>
 
-          <div class="col-12 col-md-4">
-            <div class="card card-surface p-3">
-              <div class="text-muted small">Monto</div>
-              <div id="confMonto" class="h5 m-0">—</div>
-              <div id="confPendienteHelp" class="small text-danger mt-1 d-none"><i class="bi bi-exclamation-triangle me-1"></i>El monto supera el pendiente.</div>
-            </div>
-          </div>
-          <div class="col-12 col-md-4">
-            <div class="card card-surface p-3">
-              <div class="text-muted small">Banco</div>
-              <div id="confBanco" class="h5 m-0">—</div>
-            </div>
-          </div>
-          <div class="col-12 col-md-4">
-            <div class="card card-surface p-3">
-              <div class="text-muted small">Referencia</div>
-              <div id="confReferencia" class="h5 m-0">—</div>
-            </div>
-          </div>
+          <div class="col-12 col-md-4"><div class="card card-surface p-3"><div class="text-muted small">Monto</div><div id="confMonto" class="h5 m-0">—</div><div id="confPendienteHelp" class="small text-danger mt-1 d-none"><i class="bi bi-exclamation-triangle me-1"></i>El monto supera el pendiente.</div></div></div>
+          <div class="col-12 col-md-4"><div class="card card-surface p-3"><div class="text-muted small">Banco</div><div id="confBanco" class="h5 m-0">—</div></div></div>
+          <div class="col-12 col-md-4"><div class="card card-surface p-3"><div class="text-muted small">Referencia</div><div id="confReferencia" class="h5 m-0">—</div></div></div>
 
-          <div class="col-12">
-            <div class="card card-surface p-3">
-              <div class="text-muted small">Motivo (opcional)</div>
-              <div id="confMotivo" class="m-0">—</div>
-            </div>
-          </div>
+          <div class="col-12"><div class="card card-surface p-3"><div class="text-muted small">Motivo (opcional)</div><div id="confMotivo" class="m-0">—</div></div></div>
 
           <div class="col-12">
             <div class="card card-surface p-3">
               <div class="d-flex align-items-center justify-content-between">
-                <div>
-                  <div class="text-muted small">Comprobante</div>
-                  <div id="confArchivo" class="m-0">—</div>
-                </div>
+                <div><div class="text-muted small">Comprobante</div><div id="confArchivo" class="m-0">—</div></div>
                 <div id="confPreview" class="ms-3"></div>
               </div>
               <div class="small text-muted mt-2">Se validará tamaño (≤10MB) y tipo (PDF/JPG/PNG).</div>
@@ -731,7 +668,6 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
   </div>
 </div>
 
-<!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script> -->
 <script>
 (() => {
   const modalEl   = document.getElementById('modalConfirmarDeposito');
@@ -741,24 +677,30 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
   // tooltips
   document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
 
-  // Lista blanca en el cliente (debiera coincidir con PHP)
+  // Lista blanca (incluye Efectivo)
   const allowedBanks = [
+    "Efectivo",
     "BBVA","Citibanamex","Banorte","Santander","HSBC","Scotiabank",
     "Inbursa","Banco Azteca","BanCoppel","Banregio","Afirme",
     "Banco del Bajío","Banca Mifel","Compartamos Banco"
   ];
 
-  // Sincroniza select de bancos con el hidden "banco"
+  // Sincroniza select->hidden y resalta si es Efectivo (sin valor por defecto)
   document.querySelectorAll('.deposito-form').forEach(form => {
-    const sel = form.querySelector('select[name="banco_select"]');
+    const sel    = form.querySelector('select[name="banco_select"]');
     const hidden = form.querySelector('input[name="banco"]');
     if (!sel || !hidden) return;
-    const sync = () => { hidden.value = sel.value || ""; };
+
+    const toggleHighlight = () => {
+      sel.classList.toggle('banco-efectivo', sel.value === 'Efectivo');
+    };
+    const sync = () => { hidden.value = sel.value || ""; toggleHighlight(); };
+
     sel.addEventListener('change', sync);
-    sync(); // init
+    sync(); // init: queda vacío hasta que el usuario elija
   });
 
-  const formatMXN = (n) => new Intl.NumberFormat('es-MX', { style:'currency', currency:'MXN' }).format(n);
+  const formatMXN = n => new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(n);
 
   function validateFile(file){
     if(!file) return {ok:false, msg:'Adjunta el comprobante.'};
@@ -838,11 +780,7 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
   });
 
   document.getElementById('btnModalConfirmar').addEventListener('click', () => {
-    if (formToSubmit) {
-      formToSubmit.submit();
-      formToSubmit = null;
-      modal.hide();
-    }
+    if (formToSubmit) { formToSubmit.submit(); formToSubmit = null; modal.hide(); }
   });
 })();
 </script>

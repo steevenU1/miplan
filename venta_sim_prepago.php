@@ -330,9 +330,9 @@ $stmt->close();
           <div class="form-text">Escribe ICCID, operador o caja para filtrar.</div>
 
           <div class="d-flex gap-2 mt-2">
-            <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalAltaSim">
+            <!-- <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalAltaSim">
               <i class="bi bi-plus-circle me-1"></i> Agregar SIM (no está en inventario)
-            </button>
+            </button> -->
           </div>
         </div>
 

@@ -79,10 +79,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $monto_tarjeta  = 0.00;
         }
 
-        // Comisión especial (solo si es Abono PayJoy/Krediya y NO es pago con tarjeta)
-        // Si también quieres excluir 'Mixto', cambia la condición a ($tipo_pago === 'Efectivo').
+        // Comisión especial: SIEMPRE para Abono PayJoy/Krediya (independiente del tipo de pago)
         $esAbono = in_array($motivo, ['Abono PayJoy','Abono Krediya'], true);
-        $comision_especial = ($esAbono && $tipo_pago !== 'Tarjeta') ? 10.00 : 0.00;
+        $comision_especial = $esAbono ? 10.00 : 0.00;
 
         if ($motivo === '' || $tipo_pago === '' || $monto_total <= 0) {
             $msg = "<div class='alert alert-warning mb-3'>⚠ Debes llenar todos los campos obligatorios.</div>";
@@ -212,6 +211,7 @@ try {
     <div class="col-12 col-lg-7">
       <form method="POST" class="card card-soft p-3 p-md-4" id="formCobro" novalidate>
         <input type="hidden" name="cobro_token" value="<?= htmlspecialchars($_SESSION['cobro_token'], ENT_QUOTES, 'UTF-8') ?>">
+
         <!-- Motivo -->
         <div class="mb-3">
           <label class="form-label label-req"><i class="bi bi-clipboard2-check me-1"></i>Motivo del cobro</label>
@@ -227,7 +227,7 @@ try {
           </select>
           <div class="form-help">
             Para <strong>Abono PayJoy/Krediya</strong> se suma comisión especial automática
-            <em>(no aplica si el pago es con tarjeta)</em>.
+            <em>(aplica para cualquier tipo de pago)</em>.
           </div>
         </div>
 
@@ -289,9 +289,7 @@ try {
         <div class="sticky-actions">
           <div class="d-grid mt-3">
             <button type="submit" class="btn btn-success btn-lg"
-                    <?= $lock ? 'disabled' : '' ?>>
-              <i class="bi bi-save me-2"></i>Guardar Cobro
-            </button>
+                    <?= $lock ? 'disabled' : '' ?>><i class="bi bi-save me-2"></i>Guardar Cobro</button>
           </div>
           <?php if ($lock): ?>
             <div class="text-center text-muted mt-2">
@@ -419,16 +417,38 @@ try {
     validar();
   }
 
-  // Comisión especial: aplica solo si es Abono PayJoy/Krediya y NO es tarjeta
-  function comisionEspecial(m,t){ return ((m==="Abono PayJoy"||m==="Abono Krediya") && t!=="Tarjeta") ? 10 : 0; }
+  // Comisión especial: SIEMPRE que sea Abono PayJoy/Krediya (sin importar tipo de pago)
+  function comisionEspecial(m){ return (m==="Abono PayJoy"||m==="Abono Krediya") ? 10 : 0; }
 
   function validar(){
-    const m=($motivo.val()||"").trim(), t=$tipo.val()||"", tot=parseFloat($total.val()||0)||0, ef=parseFloat($efectivo.val()||0)||0, tj=parseFloat($tarjeta.val()||0)||0, com=comisionEspecial(m,t);
-    $("#r_motivo").text(m||"—"); $("#r_tipo").text(t||"—"); $("#r_total").text(fmt(tot)); $("#r_efectivo").text(fmt(ef)); $("#r_tarjeta").text(fmt(tj)); $("#r_comision").text(fmt(com));
-    let ok=false; if(t==="Efectivo") ok=Math.abs(ef-tot)<0.01; if(t==="Tarjeta") ok=Math.abs(tj-tot)<0.01; if(t==="Mixto") ok=Math.abs((ef+tj)-tot)<0.01;
+    const m=($motivo.val()||"").trim(),
+          t=$tipo.val()||"",
+          tot=parseFloat($total.val()||0)||0,
+          ef=parseFloat($efectivo.val()||0)||0,
+          tj=parseFloat($tarjeta.val()||0)||0,
+          com=comisionEspecial(m);
+
+    $("#r_motivo").text(m||"—");
+    $("#r_tipo").text(t||"—");
+    $("#r_total").text(fmt(tot));
+    $("#r_efectivo").text(fmt(ef));
+    $("#r_tarjeta").text(fmt(tj));
+    $("#r_comision").text(fmt(com));
+
+    let ok=false;
+    if(t==="Efectivo") ok=Math.abs(ef-tot)<0.01;
+    if(t==="Tarjeta")  ok=Math.abs(tj-tot)<0.01;
+    if(t==="Mixto")    ok=Math.abs((ef+tj)-tot)<0.01;
+
     const $s=$("#r_status");
-    if(!t||tot<=0){ $s.html(`<div class="alert alert-secondary py-2 mb-0"><i class="bi bi-info-circle me-1"></i>Completa el tipo de pago y el total.</div>`); return; }
-    $s.html(ok?`<div class="alert alert-success py-2 mb-0"><i class="bi bi-check-circle me-1"></i>Montos correctos.</div>`:`<div class="alert alert-warning py-2 mb-0"><i class="bi bi-exclamation-triangle me-1"></i>Los montos no cuadran.</div>`);
+    if(!t||tot<=0){
+      $s.html(`<div class="alert alert-secondary py-2 mb-0"><i class="bi bi-info-circle me-1"></i>Completa el tipo de pago y el total.</div>`);
+      return;
+    }
+    $s.html(ok
+      ? `<div class="alert alert-success py-2 mb-0"><i class="bi bi-check-circle me-1"></i>Montos correctos.</div>`
+      : `<div class="alert alert-warning py-2 mb-0"><i class="bi bi-exclamation-triangle me-1"></i>Los montos no cuadran.</div>`
+    );
   }
 
   $("#tipo_pago").on("change", toggleCampos);
