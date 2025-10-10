@@ -376,7 +376,7 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
 </div>
 
 <!-- JS -->
-<!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script> -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
 
 <script>
   // Datos PHP -> JS
@@ -508,9 +508,9 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
           <div class="invalid-feedback">Elige un código válido del catálogo.</div>
         </div>
       </td>
-      <td class="col-color"><input type="text" class="form-control color" name="color[${idx}]" readonly required></td>
+      <td class="col-color"><input type="text" class="form-control color" name="color[${idx}]" readonly></td>
       <td class="col-ram"><input type="text" class="form-control ram" name="ram[${idx}]" readonly></td>
-      <td class="col-cap"><input type="text" class="form-control capacidad" name="capacidad[${idx}]" readonly required></td>
+      <td class="col-cap"><input type="text" class="form-control capacidad" name="capacidad[${idx}]" readonly></td>
       <td class="col-qty"><input type="number" min="1" value="1" class="form-control num qty" name="cantidad[${idx}]" required></td>
       <td class="col-pu">
         <input type="number" step="0.01" min="0" value="0" class="form-control num pu" name="precio_unitario[${idx}]" required>
@@ -614,7 +614,7 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
         if (m) aplicarModeloEnRenglon(m, tr);
       });
 
-    // Validaciones por renglón
+    // Validaciones por renglón (sólo lo esencial)
     let ok = true; let msg = '';
     const rows = document.querySelectorAll('#tablaDetalle tbody tr.renglon');
     rows.forEach(tr => {
@@ -634,6 +634,7 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
     if (!ok) { e.preventDefault(); alert(msg); return; }
 
     // Construir resumen para el modal de confirmación
+    const cfBody = document.getElementById('cfBody');
     cfBody.innerHTML = '';
     rows.forEach((tr, idx) => {
       const codTxt = tr.querySelector('.mm-buscar').value || '';
@@ -645,10 +646,10 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
       const trHtml = `
         <tr>
           <td>${idx+1}</td>
-          <td>${codTxt ? htmlesc(codTxt) : '-'}</td>
-          <td>${color ? htmlesc(color) : '-'}</td>
-          <td>${ram ? htmlesc(ram) : '-'}</td>
-          <td>${cap ? htmlesc(cap) : '-'}</td>
+          <td>${htmlesc(codTxt) || '-'}</td>
+          <td>${htmlesc(color) || '-'}</td>
+          <td>${htmlesc(ram) || '-'}</td>
+          <td>${htmlesc(cap) || '-'}</td>
           <td class="text-end">${qty}</td>
           <td class="text-end">$${formato(pu)}</td>
         </tr>
