@@ -1,11 +1,15 @@
 <?php
+// exportar_inventario_global.php — Export HTML->Excel del Inventario Global
+// Ajustes: columna "Cantidad" (1 equipos, acumulado accesorios por sucursal+producto)
+//          agrega filtro "modelo" y permite rol Logistica como en la vista.
+
 session_start();
 if (!isset($_SESSION['id_usuario'])) {
     header("Location: 403.php");
     exit();
 }
 $ROL = $_SESSION['rol'] ?? '';
-$ALLOWED = ['Admin','GerenteZona'];
+$ALLOWED = ['Admin','GerenteZona','Logistica'];
 if (!in_array($ROL, $ALLOWED, true)) {
     header("Location: 403.php");
     exit();
@@ -20,6 +24,7 @@ $filtroEstatus    = $_GET['estatus']     ?? '';
 $filtroAntiguedad = $_GET['antiguedad']  ?? '';
 $filtroPrecioMin  = $_GET['precio_min']  ?? '';
 $filtroPrecioMax  = $_GET['precio_max']  ?? '';
+$filtroModelo     = $_GET['modelo']      ?? ''; // NUEVO
 
 /* ===== Obtener columnas reales de productos (en orden) ===== */
 $cols = [];
@@ -48,10 +53,11 @@ function codigo_fallback_from_row($row) {
 $sql = "
     SELECT
         i.id AS id_inventario,
+        s.id AS id_sucursal,
         s.nombre AS sucursal,
-        p.*,  -- ✅ todas las columnas de productos
-        COALESCE(p.costo_con_iva, p.costo, 0) AS costo_mostrar,       -- para profit si lo necesitas aparte
-        (p.precio_lista - COALESCE(p.costo_con_iva, p.costo, 0)) AS profit, -- ✅ profit con costo c/IVA
+        p.*,  -- todas las columnas de productos
+        COALESCE(p.costo_con_iva, p.costo, 0) AS costo_mostrar,
+        (p.precio_lista - COALESCE(p.costo_con_iva, p.costo, 0)) AS profit,
         i.estatus AS estatus_inventario,
         i.fecha_ingreso,
         TIMESTAMPDIFF(DAY, i.fecha_ingreso, NOW()) AS antiguedad_dias
@@ -72,9 +78,13 @@ if ($filtroSucursal !== '') {
 if ($filtroImei !== '') {
     $sql .= " AND (p.imei1 LIKE ? OR p.imei2 LIKE ?)";
     $like = "%$filtroImei%";
-    $params[] = $like;
-    $params[] = $like;
+    $params[] = $like; $params[] = $like;
     $types .= "ss";
+}
+if ($filtroModelo !== '') {            // NUEVO: coincide con la vista
+    $sql .= " AND p.modelo LIKE ?";
+    $params[] = "%$filtroModelo%";
+    $types .= "s";
 }
 if ($filtroEstatus !== '') {
     $sql .= " AND i.estatus = ?";
@@ -106,7 +116,25 @@ if (!empty($params)) {
     $stmt->bind_param($types, ...$params);
 }
 $stmt->execute();
-$result = $stmt->get_result();
+$res = $stmt->get_result();
+
+/* ===== Preparar acumulados para "Cantidad" en accesorios =====
+   Regla: equipos = 1 por fila; accesorios = total por (sucursal + id_producto)
+   Para eso construimos un mapa $accCounts antes de renderizar.
+*/
+$rows = [];
+$accCounts = []; // $accCounts[$id_sucursal][$id_producto] = cantidad
+while ($r = $res->fetch_assoc()) {
+    $rows[] = $r;
+    $esAcc = (strcasecmp((string)($r['tipo_producto'] ?? ''), 'Accesorio') === 0);
+    if ($esAcc) {
+        $sid = (int)$r['id_sucursal'];
+        $pid = (int)$r['id']; // OJO: p.* trae p.id, que quedó en $r['id']
+        if (!isset($accCounts[$sid])) $accCounts[$sid] = [];
+        if (!isset($accCounts[$sid][$pid])) $accCounts[$sid][$pid] = 0;
+        $accCounts[$sid][$pid]++;
+    }
+}
 
 /* ===== Cabeceras: Excel abre HTML como libro ===== */
 header("Content-Type: application/vnd.ms-excel; charset=UTF-8");
@@ -126,7 +154,6 @@ echo "<tr style='background:#222;color:#fff;font-weight:bold'>";
 echo "<td>ID Inventario</td>";
 echo "<td>Sucursal</td>";
 foreach ($cols as $col) {
-    // Etiquetas amigables opcionales (puedes dejarlas iguales)
     if ($col === 'costo_con_iva') {
         echo "<td>Costo c/IVA</td>";
     } else {
@@ -134,13 +161,14 @@ foreach ($cols as $col) {
     }
 }
 echo "<td>Profit</td>";
+echo "<td>Cantidad</td>"; // NUEVO
 echo "<td>Estatus Inventario</td>";
 echo "<td>Fecha Ingreso</td>";
 echo "<td>Antigüedad (días)</td>";
 echo "</tr>";
 
 /* Filas */
-while ($row = $result->fetch_assoc()) {
+foreach ($rows as $row) {
     echo "<tr>";
     echo "<td>".h($row['id_inventario'])."</td>";
     echo "<td>".h($row['sucursal'])."</td>";
@@ -169,8 +197,20 @@ while ($row = $result->fetch_assoc()) {
         echo "<td>".h($val)."</td>";
     }
 
-    // Extra: Profit calculado con costo_con_iva (fallback a costo)
+    // Profit calculado con costo_con_iva (fallback a costo)
     echo "<td>".nf($row['profit'])."</td>";
+
+    // Cantidad: 1 para equipo; total acumulado para accesorio (x sucursal+producto)
+    $esAcc = (strcasecmp((string)($row['tipo_producto'] ?? ''), 'Accesorio') === 0);
+    if ($esAcc) {
+        $sid = (int)$row['id_sucursal'];
+        $pid = (int)$row['id']; // p.id dentro de p.*
+        $cantidad = $accCounts[$sid][$pid] ?? 1;
+    } else {
+        $cantidad = 1;
+    }
+    echo "<td>".(int)$cantidad."</td>";
+
     echo "<td>".h($row['estatus_inventario'])."</td>";
     echo "<td>".h($row['fecha_ingreso'])."</td>";
     echo "<td>".h($row['antiguedad_dias'])."</td>";

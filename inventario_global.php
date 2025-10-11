@@ -1,5 +1,6 @@
 <?php
 // inventario_global.php — LUGA (RAM + "Almacenamiento", fecha sin hora, tabla compacta)
+// Ahora con columna "Cantidad" y KPIs separados para Equipos vs Accesorios.
 session_start();
 if (!isset($_SESSION['id_usuario'])) { header("Location: 403.php"); exit(); }
 
@@ -26,7 +27,7 @@ $filtroEstatus    = $_GET['estatus']     ?? '';
 $filtroAntiguedad = $_GET['antiguedad']  ?? '';
 $filtroPrecioMin  = $_GET['precio_min']  ?? '';
 $filtroPrecioMax  = $_GET['precio_max']  ?? '';
-$filtroModelo     = $_GET['modelo']      ?? ''; // <<< NUEVO FILTRO
+$filtroModelo     = $_GET['modelo']      ?? ''; // <<< FILTRO MODELO
 
 $sql = "
   SELECT i.id AS id_inventario,
@@ -61,7 +62,6 @@ if ($filtroImei !== '') {
   $sql .= " AND (p.imei1 LIKE ? OR p.imei2 LIKE ?)";
   $like = "%$filtroImei%"; $params[] = $like; $params[] = $like; $types .= "ss";
 }
-// --- NUEVO: Filtro por modelo (LIKE, coincidencia parcial) ---
 if ($filtroModelo !== '') {
   $sql .= " AND p.modelo LIKE ?";
   $params[] = "%$filtroModelo%"; $types .= "s";
@@ -92,30 +92,54 @@ $result = $stmt->get_result();
 
 $sucursales = $conn->query("SELECT id, nombre FROM sucursales ORDER BY nombre");
 
-// Agregados
+// ===== Agregados/KPIs =====
 $rangos = ['<30' => 0, '30-90' => 0, '>90' => 0];
 $inventario = [];
 
-$total=0; $sumAntiguedad=0; $sumPrecio=0.0; $sumProfit=0.0; $cntDisp=0; $cntTrans=0;
+// Conteos por tipo
+$equiposTotal = 0; $equiposDisp = 0; $equiposTrans = 0;
+$accesTotal   = 0; $accesDisp   = 0; $accesTrans   = 0;
+
+// Promedios globales (pueden mezclar equipos y accesorios; si prefieres solo equipos, ajustar abajo)
+$sumAntiguedad=0; $sumPrecio=0.0; $sumProfit=0.0; $totalRows=0;
+
+// Mapa para cantidades de accesorios por (sucursal, id_producto)
+$accCounts = []; // $accCounts[$id_sucursal][$id_producto] = cantidad
 
 while ($row = $result->fetch_assoc()) {
   $inventario[] = $row;
+
   $dias = (int)$row['antiguedad_dias'];
   if ($dias < 30) $rangos['<30']++;
   elseif ($dias <= 90) $rangos['30-90']++;
   else $rangos['>90']++;
 
-  $total++;
+  $totalRows++;
   $sumAntiguedad += $dias;
   $sumPrecio  += (float)$row['precio_lista'];
   $sumProfit  += (float)$row['profit'];
-  if ($row['estatus'] === 'Disponible') $cntDisp++;
-  if ($row['estatus'] === 'En tránsito') $cntTrans++;
+
+  $esAccesorio = (strcasecmp((string)$row['tipo_producto'], 'Accesorio') === 0);
+  $estatus = (string)$row['estatus'];
+
+  if ($esAccesorio) {
+    $accesTotal++;
+    if ($estatus === 'Disponible') $accesDisp++;
+    if ($estatus === 'En tránsito') $accesTrans++;
+    $sid = (int)$row['id_sucursal']; $pid = (int)$row['id_producto'];
+    if (!isset($accCounts[$sid])) $accCounts[$sid] = [];
+    if (!isset($accCounts[$sid][$pid])) $accCounts[$sid][$pid] = 0;
+    $accCounts[$sid][$pid]++; // cantidad por sucursal/modelo
+  } else {
+    $equiposTotal++;
+    if ($estatus === 'Disponible') $equiposDisp++;
+    if ($estatus === 'En tránsito') $equiposTrans++;
+  }
 }
 
-$promAntiguedad = $total ? round($sumAntiguedad / $total, 1) : 0;
-$promPrecio     = $total ? round($sumPrecio / $total, 2) : 0.0;
-$promProfit     = $total ? round($sumProfit / $total, 2) : 0.0;
+$promAntiguedad = $totalRows ? round($sumAntiguedad / $totalRows, 1) : 0;
+$promPrecio     = $totalRows ? round($sumPrecio / $totalRows, 2) : 0.0;
+$promProfit     = $totalRows ? round($sumProfit / $totalRows, 2) : 0.0;
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -143,7 +167,7 @@ $promProfit     = $total ? round($sumProfit / $total, 2) : 0.0;
     .toolbar { display:flex; gap:8px; align-items:center; }
     .filters-card { border:1px solid #e9ecf1; box-shadow:0 1px 6px rgba(16,24,40,.06); border-radius:16px; }
     .kpi { border:1px solid #e9ecf1; border-radius:16px; background:#fff; box-shadow:0 2px 8px rgba(16,24,40,.06); padding:16px; }
-    .kpi h6{ margin:0; font-size:.9rem; color:#6b7280; } .kpi .metric{ font-weight:800; font-size:1.4rem; margin-top:4px; }
+    .kpi h6{ margin:0; font-size:.9rem; color:#6b7280; } .kpi .metric{ font-weight:800; font-size:1.25rem; margin-top:4px; }
     .badge-soft{ border:1px solid transparent; } .badge-soft.success{ background:#e9f9ee; color:#0b7a3a; border-color:#b9ebc9;} .badge-soft.warning{ background:#fff6e6; color:#955f00; border-color:#ffe2ad;}
     .table thead th { white-space: nowrap; }
     .profit-pos { color:#0b7a3a; font-weight:700; } .profit-neg { color:#b42318; font-weight:700; }
@@ -175,7 +199,7 @@ $promProfit     = $total ? round($sumProfit / $total, 2) : 0.0;
   <div class="page-head">
     <div>
       <h2 class="page-title">🌎 Inventario Global</h2>
-      <div class="mt-1"><span class="role-chip"><?= ($ROL==='Admin' ? 'Admin' : 'Gerente de Zona'); ?></span></div>
+      <div class="mt-1"><span class="role-chip"><?= ($ROL==='Admin' ? 'Admin' : ($ROL==='Logistica'?'Logística':'Gerente de Zona')); ?></span></div>
     </div>
     <div class="toolbar">
       <button class="btn btn-outline-secondary btn-sm rounded-pill" data-bs-toggle="collapse" data-bs-target="#filtrosCollapse">
@@ -192,12 +216,28 @@ $promProfit     = $total ? round($sumProfit / $total, 2) : 0.0;
 
   <!-- KPIs -->
   <div class="row g-3 mb-3">
-    <div class="col-6 col-md-4 col-lg-2"><div class="kpi"><h6>Total equipos</h6><div class="metric"><?= number_format($total) ?></div></div></div>
-    <div class="col-6 col-md-4 col-lg-2"><div class="kpi"><h6>Disponible</h6><div class="metric"><span class="badge badge-soft success"><?= number_format($cntDisp) ?></span></div></div></div>
-    <div class="col-6 col-md-4 col-lg-2"><div class="kpi"><h6>En tránsito</h6><div class="metric"><span class="badge badge-soft warning"><?= number_format($cntTrans) ?></span></div></div></div>
-    <div class="col-6 col-md-4 col-lg-2"><div class="kpi"><h6>Antigüedad prom.</h6><div class="metric"><?= $promAntiguedad ?> d</div></div></div>
-    <div class="col-6 col-md-4 col-lg-2"><div class="kpi"><h6>Ticket promedio</h6><div class="metric">$<?= number_format($promPrecio,2) ?></div></div></div>
-    <div class="col-6 col-md-4 col-lg-2"><div class="kpi"><h6>Profit prom.</h6><div class="metric <?= $promProfit>=0?'text-success':'text-danger' ?>">$<?= number_format($promProfit,2) ?></div></div></div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <div class="kpi"><h6>Total equipos</h6><div class="metric"><?= number_format($equiposTotal) ?></div></div>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <div class="kpi"><h6>Equipos disponibles</h6><div class="metric"><span class="badge badge-soft success"><?= number_format($equiposDisp) ?></span></div></div>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <div class="kpi"><h6>Total accesorios</h6><div class="metric"><?= number_format($accesTotal) ?></div></div>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <div class="kpi"><h6>Accesorios disponibles</h6><div class="metric"><span class="badge badge-soft success"><?= number_format($accesDisp) ?></span></div></div>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <div class="kpi"><h6>Antigüedad prom.</h6><div class="metric"><?= $promAntiguedad ?> d</div></div>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <div class="kpi"><h6>Ticket promedio</h6><div class="metric">$<?= number_format($promPrecio,2) ?></div></div>
+    </div>
+    <!-- Si prefieres, cambia este profit a solo equipos; por ahora es global -->
+    <div class="col-6 col-md-3 col-lg-2">
+      <div class="kpi"><h6>Profit prom.</h6><div class="metric <?= $promProfit>=0?'text-success':'text-danger' ?>">$<?= number_format($promProfit,2) ?></div></div>
+    </div>
   </div>
 
   <!-- Filtros -->
@@ -220,7 +260,7 @@ $promProfit     = $total ? round($sumProfit / $total, 2) : 0.0;
             <input type="text" name="imei" class="form-control" placeholder="Buscar IMEI..." value="<?= h($filtroImei) ?>">
           </div>
 
-          <!-- NUEVO CAMPO: MODELO -->
+          <!-- CAMPO: MODELO -->
           <div class="col-12 col-md-3">
             <label class="form-label">Modelo</label>
             <input type="text" name="modelo" class="form-control" placeholder="Buscar modelo..." value="<?= h($filtroModelo) ?>">
@@ -307,6 +347,7 @@ $promProfit     = $total ? round($sumProfit / $total, 2) : 0.0;
           <th>Costo c/IVA ($)</th>
           <th>Precio Lista ($)</th>
           <th>Profit ($)</th>
+          <th>Cantidad</th> <!-- NUEVA COLUMNA -->
           <th>Estatus</th>
           <th>Fecha ingreso</th>
           <th>Antigüedad</th>
@@ -323,6 +364,13 @@ $promProfit     = $total ? round($sumProfit / $total, 2) : 0.0;
           ? '<span class="chip"><span class="status-dot dot-green"></span>Disponible</span>'
           : '<span class="chip"><span class="status-dot dot-amber"></span>En tránsito</span>';
         $fechaSolo = h(substr((string)$row['fecha_ingreso'], 0, 10)); // YYYY-MM-DD
+
+        $esAccesorio = (strcasecmp((string)$row['tipo_producto'], 'Accesorio') === 0);
+        $cantidad = 1;
+        if ($esAccesorio) {
+          $sid = (int)$row['id_sucursal']; $pid = (int)$row['id_producto'];
+          $cantidad = $accCounts[$sid][$pid] ?? 1; // total por sucursal/modelo (según datos ya filtrados)
+        }
       ?>
         <tr>
           <td><?= h($row['sucursal']) ?></td>
@@ -353,6 +401,7 @@ $promProfit     = $total ? round($sumProfit / $total, 2) : 0.0;
           <td class="text-end">
             <span class="<?= $profit>=0 ? 'profit-pos' : 'profit-neg' ?>">$<?= number_format($profit,2) ?></span>
           </td>
+          <td class="text-center"><?= (int)$cantidad ?></td>
           <td><?= $statusChip ?></td>
           <td><?= $fechaSolo ?></td>
           <td><span class="ant-pill <?= $antClass ?>"><?= $dias ?> d</span></td>
@@ -395,11 +444,11 @@ $promProfit     = $total ? round($sumProfit / $total, 2) : 0.0;
     });
   }
 
-  // DataTable (orden por fecha ingreso desc; índices actualizados por nueva columna RAM)
+  // DataTable (ajuste de índice: ahora "Fecha ingreso" es la columna 14 (0-based))
   $(function() {
     $('#tablaInventario').DataTable({
       pageLength: 25,
-      order: [[ 13, "desc" ]], // índice de "Fecha ingreso" tras agregar RAM
+      order: [[ 14, "desc" ]], // índice de "Fecha ingreso"
       responsive: true,
       autoWidth: false,
       fixedHeader: true,
@@ -413,12 +462,12 @@ $promProfit     = $total ? round($sumProfit / $total, 2) : 0.0;
         { extend: 'colvis',     className: 'btn btn-light btn-sm rounded-pill border', text: '<i class="bi bi-view-list me-1"></i>Columnas' }
       ],
       columnDefs: [
-        { targets: [9,10,11], className: 'text-end' },                 // precios/profit
-        { targets: [13,14], className: 'text-nowrap' },                // fecha y antigüedad
-        { responsivePriority: 1, targets: 0 },                         // sucursal
-        { responsivePriority: 2, targets: 1 },                         // marca
-        { responsivePriority: 3, targets: 2 },                         // modelo
-        { responsivePriority: 100, targets: [7,8] }                    // IMEI2 / proveedor: ceden primero en móvil
+        { targets: [9,10,11], className: 'text-end' },     // precios/profit
+        { targets: [14,15], className: 'text-nowrap' },    // fecha y antigüedad
+        { responsivePriority: 1, targets: 0 },             // sucursal
+        { responsivePriority: 2, targets: 1 },             // marca
+        { responsivePriority: 3, targets: 2 },             // modelo
+        { responsivePriority: 100, targets: [7,8] }        // IMEI2 / proveedor: ceden primero en móvil
       ]
     });
   });
@@ -430,7 +479,7 @@ $promProfit     = $total ? round($sumProfit / $total, 2) : 0.0;
       type: 'bar',
       data: {
         labels: ['<30 días', '30-90 días', '>90 días'],
-        datasets: [{ label: 'Cantidad de equipos', data: [<?= (int)$rangos['<30'] ?>, <?= (int)$rangos['30-90'] ?>, <?= (int)$rangos['>90'] ?>] }]
+        datasets: [{ label: 'Cantidad de items', data: [<?= (int)$rangos['<30'] ?>, <?= (int)$rangos['30-90'] ?>, <?= (int)$rangos['>90'] ?>] }]
       },
       options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
     });

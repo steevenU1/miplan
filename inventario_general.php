@@ -1,5 +1,7 @@
 <?php
 // inventario_eulalia.php — Central MiPlan (Almacén Central) — versión flexible “Almacén/Eulalia”
+// Ajustes: KPIs separados (Equipos vs Accesorios) + columna "Cantidad" (1 equipos; acumulado accesorios)
+
 session_start();
 
 if (!isset($_SESSION['id_usuario'])) {
@@ -84,6 +86,7 @@ $fPrecioMax   = $_GET['precio_max']    ?? '';
 $sql = "
 SELECT 
     i.id AS id_inv,
+    i.id_sucursal,
     p.id AS id_prod,
     p.marca, p.modelo, p.color, p.capacidad,
     p.imei1, p.imei2,
@@ -148,32 +151,60 @@ $stmt->execute();
 $result = $stmt->get_result();
 
 // ===============================
-//   Agregados para KPIs/Gráfica
+//   Agregados para KPIs/Gráfica y Cantidades
 // ===============================
 $inventario = [];
 $rangos = ['<30'=>0,'30-90'=>0,'>90'=>0];
-$total = 0; $cntDisp = 0; $cntTrans = 0;
-$sumAnt = 0; $sumPrecio = 0.0; $sumProfit = 0.0;
+
+// KPIs separados
+$equiposTotal = 0; $equiposDisp = 0; $equiposTrans = 0;
+$accesTotal   = 0; $accesDisp   = 0; $accesTrans   = 0;
+
+// Promedios globales (mezcla equipos/accesorios)
+$sumAnt = 0; $sumPrecio = 0.0; $sumProfit = 0.0; $totalRows = 0;
+
+// Mapa de cantidades para Accesorios por (id_sucursal + id_prod)
+$accCounts = []; // $accCounts[$id_sucursal][$id_prod] = cantidad
 
 while ($r = $result->fetch_assoc()) {
   $inventario[] = $r;
+
+  // Rango de antigüedad
   $d = (int)$r['antiguedad_dias'];
   if ($d < 30) $rangos['<30']++;
   elseif ($d <= 90) $rangos['30-90']++;
   else $rangos['>90']++;
 
-  $total++;
+  // Promedios globales
+  $totalRows++;
   $sumAnt += $d;
   $sumPrecio += (float)$r['precio_lista'];
   $sumProfit += (float)$r['profit'];
-  if ($r['estatus'] === 'Disponible') $cntDisp++;
-  if ($r['estatus'] === 'En tránsito') $cntTrans++;
+
+  // Clasificación por tipo
+  $esAcc = (strcasecmp((string)$r['tipo_producto'], 'Accesorio') === 0);
+  $estatus = (string)$r['estatus'];
+
+  if ($esAcc) {
+    $accesTotal++;
+    if ($estatus === 'Disponible') $accesDisp++;
+    if ($estatus === 'En tránsito') $accesTrans++;
+    $sid = (int)$r['id_sucursal'];
+    $pid = (int)$r['id_prod'];
+    if (!isset($accCounts[$sid])) $accCounts[$sid] = [];
+    if (!isset($accCounts[$sid][$pid])) $accCounts[$sid][$pid] = 0;
+    $accCounts[$sid][$pid]++; // suma por producto en este almacén
+  } else {
+    $equiposTotal++;
+    if ($estatus === 'Disponible') $equiposDisp++;
+    if ($estatus === 'En tránsito') $equiposTrans++;
+  }
 }
 $stmt->close();
 
-$promAnt = $total ? round($sumAnt/$total, 1) : 0;
-$promPrecio = $total ? round($sumPrecio/$total, 2) : 0.0;
-$promProfit = $total ? round($sumProfit/$total, 2) : 0.0;
+$promAnt    = $totalRows ? round($sumAnt/$totalRows, 1) : 0;
+$promPrecio = $totalRows ? round($sumPrecio/$totalRows, 2) : 0.0;
+$promProfit = $totalRows ? round($sumProfit/$totalRows, 2) : 0.0;
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -201,7 +232,7 @@ $promProfit = $total ? round($sumProfit/$total, 2) : 0.0;
     .role-chip { font-size:.8rem; padding:.2rem .55rem; border-radius:999px; background:#eef2ff; color:#3743a5; border:1px solid #d9e0ff; }
     .filters-card { border:1px solid #e9ecf1; box-shadow:0 1px 6px rgba(16,24,40,.06); border-radius:16px; }
     .kpi { border:1px solid #e9ecf1; border-radius:16px; background:#fff; box-shadow:0 2px 8px rgba(16,24,40,.06); padding:16px; }
-    .kpi h6{ margin:0; font-size:.9rem; color:#6b7280; } .kpi .metric{ font-weight:800; font-size:1.4rem; margin-top:4px; }
+    .kpi h6{ margin:0; font-size:.9rem; color:#6b7280; } .kpi .metric{ font-weight:800; font-size:1.25rem; margin-top:4px; }
     .badge-soft{ border:1px solid transparent; }
     .badge-soft.success{ background:#e9f9ee; color:#0b7a3a; border-color:#b9ebc9;}
     .badge-soft.warning{ background:#fff6e6; color:#955f00; border-color:#ffe2ad;}
@@ -231,7 +262,7 @@ $promProfit = $total ? round($sumProfit/$total, 2) : 0.0;
     </div>
     <div class="toolbar">
       <button class="btn btn-outline-secondary btn-sm rounded-pill" data-bs-toggle="collapse" data-bs-target="#filtrosCollapse"><i class="bi bi-sliders me-1"></i> Filtros</button>
-      <a href="exportar_inventario_eulalia.php?<?= http_build_query($_GET) ?>" class="btn btn-success btn-sm rounded-pill">
+      <a href="exportar_inventario_excel.php?<?= http_build_query($_GET) ?>" class="btn btn-success btn-sm rounded-pill">
         <i class="bi bi-file-earmark-spreadsheet me-1"></i> Exportar Excel
       </a>
       <a href="inventario_eulalia.php" class="btn btn-light btn-sm rounded-pill border"><i class="bi bi-arrow-counterclockwise me-1"></i> Limpiar</a>
@@ -246,14 +277,29 @@ $promProfit = $total ? round($sumProfit/$total, 2) : 0.0;
     </div>
   <?php endif; ?>
 
-  <!-- KPIs -->
+  <!-- KPIs (separados por tipo) -->
   <div class="row g-3 mb-3">
-    <div class="col-6 col-md-4 col-lg-2"><div class="kpi"><h6>Total equipos</h6><div class="metric"><?= number_format($total) ?></div></div></div>
-    <div class="col-6 col-md-4 col-lg-2"><div class="kpi"><h6>Disponible</h6><div class="metric"><span class="badge badge-soft success"><?= number_format($cntDisp) ?></span></div></div></div>
-    <div class="col-6 col-md-4 col-lg-2"><div class="kpi"><h6>En tránsito</h6><div class="metric"><span class="badge badge-soft warning"><?= number_format($cntTrans) ?></span></div></div></div>
-    <div class="col-6 col-md-4 col-lg-2"><div class="kpi"><h6>Antigüedad prom.</h6><div class="metric"><?= $promAnt ?> d</div></div></div>
-    <div class="col-6 col-md-4 col-lg-2"><div class="kpi"><h6>Ticket promedio</h6><div class="metric">$<?= number_format($promPrecio,2) ?></div></div></div>
-    <div class="col-6 col-md-4 col-lg-2"><div class="kpi"><h6>Profit prom.</h6><div class="metric <?= $promProfit>=0?'text-success':'text-danger' ?>">$<?= number_format($promProfit,2) ?></div></div></div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <div class="kpi"><h6>Total equipos</h6><div class="metric"><?= number_format($equiposTotal) ?></div></div>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <div class="kpi"><h6>Equipos disponibles</h6><div class="metric"><span class="badge badge-soft success"><?= number_format($equiposDisp) ?></span></div></div>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <div class="kpi"><h6>Total accesorios</h6><div class="metric"><?= number_format($accesTotal) ?></div></div>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <div class="kpi"><h6>Accesorios disponibles</h6><div class="metric"><span class="badge badge-soft success"><?= number_format($accesDisp) ?></span></div></div>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <div class="kpi"><h6>Antigüedad prom.</h6><div class="metric"><?= $promAnt ?> d</div></div>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <div class="kpi"><h6>Ticket promedio</h6><div class="metric">$<?= number_format($promPrecio,2) ?></div></div>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <div class="kpi"><h6>Profit prom.</h6><div class="metric <?= $promProfit>=0?'text-success':'text-danger' ?>">$<?= number_format($promProfit,2) ?></div></div>
+    </div>
   </div>
 
   <!-- Filtros -->
@@ -302,7 +348,7 @@ $promProfit = $total ? round($sumProfit/$total, 2) : 0.0;
           <div class="col-12 text-end">
             <button class="btn btn-primary rounded-pill"><i class="bi bi-filter me-1"></i>Aplicar</button>
             <a href="inventario_eulalia.php" class="btn btn-light rounded-pill border"><i class="bi bi-eraser me-1"></i>Limpiar</a>
-            <a href="exportar_inventario_eulalia.php?<?= http_build_query($_GET) ?>" class="btn btn-success rounded-pill"><i class="bi bi-file-earmark-excel me-1"></i>Exportar</a>
+            <a href="exportar_inventario_excel.php?<?= http_build_query($_GET) ?>" class="btn btn-success rounded-pill"><i class="bi bi-file-earmark-excel me-1"></i>Exportar</a>
           </div>
         </div>
       </form>
@@ -336,6 +382,7 @@ $promProfit = $total ? round($sumProfit/$total, 2) : 0.0;
           <th>Costo c/IVA</th>
           <th>Precio Lista</th>
           <th>Profit</th>
+          <th>Cantidad</th> <!-- NUEVA -->
           <th>Estatus</th>
           <th>Fecha Ingreso</th>
           <th>Antigüedad</th>
@@ -350,6 +397,15 @@ $promProfit = $total ? round($sumProfit/$total, 2) : 0.0;
           $statusChip = $estatus==='Disponible'
             ? '<span class="chip"><span class="status-dot dot-green"></span>Disponible</span>'
             : '<span class="chip"><span class="status-dot dot-amber"></span>En tránsito</span>';
+
+          $esAcc = (strcasecmp((string)$row['tipo_producto'], 'Accesorio') === 0);
+          if ($esAcc) {
+            $sid = (int)$row['id_sucursal'];
+            $pid = (int)$row['id_prod'];
+            $cantidad = $accCounts[$sid][$pid] ?? 1;
+          } else {
+            $cantidad = 1;
+          }
         ?>
         <tr>
           <td><?= (int)$row['id_inv'] ?></td>
@@ -373,6 +429,7 @@ $promProfit = $total ? round($sumProfit/$total, 2) : 0.0;
           <td class="text-end">$<?= number_format((float)$row['costo_mostrar'],2) ?></td>
           <td class="text-end">$<?= number_format((float)$row['precio_lista'],2) ?></td>
           <td class="text-end"><span class="<?= $profit>=0?'profit-pos':'profit-neg' ?>">$<?= number_format($profit,2) ?></span></td>
+          <td class="text-center"><?= (int)$cantidad ?></td>
           <td><?= $statusChip ?></td>
           <td><?= h($row['fecha_ingreso']) ?></td>
           <td><span class="ant-pill <?= $antClass ?>"><?= $dias ?> d</span></td>
@@ -414,11 +471,11 @@ $promProfit = $total ? round($sumProfit/$total, 2) : 0.0;
     });
   }
 
-  // DataTable
+  // DataTable (ajustar índices: añadimos "Cantidad" antes de Estatus)
   $(function(){
     $('#tablaEulalia').DataTable({
       pageLength: 25,
-      order: [[ 0, 'desc' ]],
+      order: [[ 12, 'desc' ]], // "Fecha Ingreso" está en índice 12 (0-based) tras agregar "Cantidad"
       fixedHeader: true,
       responsive: true,
       language: { url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/es-ES.json' },
@@ -431,8 +488,9 @@ $promProfit = $total ? round($sumProfit/$total, 2) : 0.0;
         { extend: 'colvis', className: 'btn btn-light btn-sm rounded-pill border', text: '<i class="bi bi-view-list me-1"></i>Columnas' }
       ],
       columnDefs: [
-        { targets: [0,8,9,10,12,13], className: 'text-nowrap' },
-        { targets: [8,9,10], className: 'text-end' }
+        { targets: [0,8,9,10,12,13,14], className: 'text-nowrap' },
+        { targets: [8,9,10], className: 'text-end' },
+        { targets: [11], className: 'text-center' } // Cantidad
       ]
     });
   });
@@ -444,7 +502,7 @@ $promProfit = $total ? round($sumProfit/$total, 2) : 0.0;
       type: 'bar',
       data: {
         labels: ['<30 días', '30-90 días', '>90 días'],
-        datasets: [{ label: 'Cantidad de equipos', data: [<?= (int)$rangos['<30'] ?>, <?= (int)$rangos['30-90'] ?>, <?= (int)$rangos['>90'] ?>] }]
+        datasets: [{ label: 'Cantidad de items', data: [<?= (int)$rangos['<30'] ?>, <?= (int)$rangos['30-90'] ?>, <?= (int)$rangos['>90'] ?>] }]
       },
       options: { responsive:true, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } }
     });

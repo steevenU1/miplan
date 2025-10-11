@@ -1,7 +1,8 @@
 <?php
 // exportar_inventario_eulalia.php — Exporta las MISMAS columnas y filtros que la vista inventario_eulalia.php
-session_start();
+// Incluye columna "Cantidad": 1 para equipos; acumulado accesorios por (id_sucursal + id_producto) con los filtros aplicados.
 
+session_start();
 if (!isset($_SESSION['id_usuario'])) { header("Location: 403.php"); exit(); }
 $ROL = $_SESSION['rol'] ?? '';
 $ALLOWED = ['Admin','GerenteZona','Super'];
@@ -50,18 +51,21 @@ $fPrecioMin   = $_GET['precio_min']    ?? '';
 $fPrecioMax   = $_GET['precio_max']    ?? '';
 
 // ===============================
-//   Query principal (igual columnas que la tabla de la vista)
+//   Query principal (traemos lo necesario para calcular "Cantidad")
 // ===============================
 $sql = "
 SELECT 
-  i.id AS id_inv,
+  i.id           AS id_inv,
+  i.id_sucursal  AS id_sucursal,
+  p.id           AS id_prod,
   p.marca, p.modelo, p.color, p.capacidad,
   p.imei1, p.imei2,
   COALESCE(p.costo_con_iva, p.costo, 0) AS costo_mostrar,
   p.precio_lista,
   (p.precio_lista - COALESCE(p.costo_con_iva, p.costo, 0)) AS profit,
   p.tipo_producto,
-  i.estatus, i.fecha_ingreso,
+  i.estatus, 
+  i.fecha_ingreso,
   TIMESTAMPDIFF(DAY, i.fecha_ingreso, NOW()) AS antiguedad_dias
 FROM inventario i
 INNER JOIN productos p ON p.id = i.id_producto
@@ -102,7 +106,25 @@ $sql .= " ORDER BY i.fecha_ingreso ASC";
 $stmt = $conn->prepare($sql);
 if ($types !== "") { $stmt->bind_param($types, ...$params); }
 $stmt->execute();
-$result = $stmt->get_result();
+$res = $stmt->get_result();
+
+// ===============================
+//   Precomputar "Cantidad" para accesorios
+// ===============================
+$rows = [];
+$accCounts = []; // $accCounts[id_sucursal][id_prod] = cantidad dentro del filtro
+while ($r = $res->fetch_assoc()) {
+  $rows[] = $r;
+  $esAcc = (strcasecmp((string)($r['tipo_producto'] ?? ''), 'Accesorio') === 0);
+  if ($esAcc) {
+    $sid = (int)$r['id_sucursal'];
+    $pid = (int)$r['id_prod'];
+    if (!isset($accCounts[$sid])) $accCounts[$sid] = [];
+    if (!isset($accCounts[$sid][$pid])) $accCounts[$sid][$pid] = 0;
+    $accCounts[$sid][$pid]++; // suma por producto en este almacén (con filtros)
+  }
+}
+$stmt->close();
 
 // ===============================
 //   Headers Excel (HTML-table; Excel lo abre perfecto)
@@ -118,7 +140,7 @@ header("Expires: 0");
 // ===============================
 echo "<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body>";
 echo "<table border='1' cellspacing='0' cellpadding='4'>";
-echo "<tr><th colspan='14' align='left'>Inventario — ".h($nombreAlmacen)."</th></tr>";
+echo "<tr><th colspan='15' align='left'>Inventario — ".h($nombreAlmacen)."</th></tr>";
 echo "<tr>";
 echo "<th>ID Inv</th>";
 echo "<th>Marca</th>";
@@ -131,17 +153,31 @@ echo "<th>Tipo</th>";
 echo "<th>Costo c/IVA</th>";
 echo "<th>Precio Lista</th>";
 echo "<th>Profit</th>";
+echo "<th>Cantidad</th>"; // NUEVA
 echo "<th>Estatus</th>";
 echo "<th>Fecha Ingreso</th>";
 echo "<th>Antigüedad (días)</th>";
 echo "</tr>";
 
-while ($row = $result->fetch_assoc()) {
-  // números como punto decimal para Excel
+// BOM para UTF-8 (por si tu servidor no lo agrega)
+// echo "\xEF\xBB\xBF";
+
+foreach ($rows as $row) {
+  // números con punto decimal para Excel
   $costo   = number_format((float)$row['costo_mostrar'], 2, '.', '');
-  $precio  = number_format((float)$row['precio_lista'], 2, '.', '');
-  $profit  = number_format((float)$row['profit'], 2, '.', '');
+  $precio  = number_format((float)$row['precio_lista'],  2, '.', '');
+  $profit  = number_format((float)$row['profit'],        2, '.', '');
   $dias    = (int)$row['antiguedad_dias'];
+
+  // Cantidad
+  $esAcc = (strcasecmp((string)($row['tipo_producto'] ?? ''), 'Accesorio') === 0);
+  if ($esAcc) {
+    $sid = (int)$row['id_sucursal'];
+    $pid = (int)$row['id_prod'];
+    $cantidad = $accCounts[$sid][$pid] ?? 1;
+  } else {
+    $cantidad = 1;
+  }
 
   echo "<tr>";
   echo "<td>".(int)$row['id_inv']."</td>";
@@ -149,12 +185,16 @@ while ($row = $result->fetch_assoc()) {
   echo "<td>".h($row['modelo'])."</td>";
   echo "<td>".h($row['color'])."</td>";
   echo "<td>".h($row['capacidad'])."</td>";
-  echo "<td>".h($row['imei1'])."</td>";
-  echo "<td>".h($row['imei2'])."</td>";
+  // Prefijo ' para evitar que Excel trunque/numere IMEIs
+  $imei1 = ($row['imei1'] ?? '') === '' ? '-' : $row['imei1'];
+  $imei2 = ($row['imei2'] ?? '') === '' ? '-' : $row['imei2'];
+  echo "<td>'".h($imei1)."'</td>";
+  echo "<td>'".h($imei2)."'</td>";
   echo "<td>".h($row['tipo_producto'])."</td>";
   echo "<td>{$costo}</td>";
   echo "<td>{$precio}</td>";
   echo "<td>{$profit}</td>";
+  echo "<td>".(int)$cantidad."</td>";
   echo "<td>".h($row['estatus'])."</td>";
   echo "<td>".h($row['fecha_ingreso'])."</td>";
   echo "<td>{$dias}</td>";
@@ -163,5 +203,4 @@ while ($row = $result->fetch_assoc()) {
 echo "</table>";
 echo "</body></html>";
 
-$stmt->close();
 $conn->close();

@@ -32,10 +32,16 @@ if (!empty($filtroImei)) {
     $types   .= "ss";
 }
 
-// 🔹 Consulta inventario (BACKEND: misma estructura)
+// 🔹 Consulta inventario (agregamos campos para tipo y cantidad de accesorios)
 $sql = "
-    SELECT i.id, p.marca, p.modelo, p.color, p.capacidad,
-           p.imei1, p.imei2, i.estatus, i.fecha_ingreso
+    SELECT 
+        i.id, 
+        i.id_sucursal,
+        p.id AS id_producto,
+        p.marca, p.modelo, p.color, p.capacidad,
+        p.imei1, p.imei2,
+        p.tipo_producto,
+        i.estatus, i.fecha_ingreso
     FROM inventario i
     INNER JOIN productos p ON p.id = i.id_producto
     $where
@@ -48,17 +54,43 @@ if (!empty($params)) {
 $stmt->execute();
 $res = $stmt->get_result();
 
-// Pasamos a arreglo para calcular resúmenes sin tocar la DB
+// Pasamos a arreglo para calcular resúmenes y cantidades sin tocar la DB
 $rows = [];
 while ($r = $res->fetch_assoc()) { $rows[] = $r; }
-$totalEquipos = count($rows);
 
-// 🔹 Resúmenes (solo front)
+// 🔹 KPIs separados (Equipos vs Accesorios)
+$equiposTotal = 0; $equiposDisp = 0; $equiposTrans = 0;
+$accesTotal   = 0; $accesDisp   = 0; $accesTrans   = 0;
+
+// 🔹 Conteo por estatus (para el header)
 $porEstatus = ['Disponible'=>0,'En tránsito'=>0];
+
+// 🔹 Mapa para "Cantidad" de accesorios por (sucursal + producto)
+$accCounts = []; // $accCounts[$id_sucursal][$id_producto] = cantidad
+
 foreach ($rows as $r) {
-  $st = $r['estatus'] ?? '';
-  if (isset($porEstatus[$st])) $porEstatus[$st]++;
+  $estatus = $r['estatus'] ?? '';
+  if (isset($porEstatus[$estatus])) $porEstatus[$estatus]++;
+
+  $esAcc = (strcasecmp((string)($r['tipo_producto'] ?? ''), 'Accesorio') === 0);
+  if ($esAcc) {
+    $accesTotal++;
+    if ($estatus === 'Disponible') $accesDisp++;
+    if ($estatus === 'En tránsito') $accesTrans++;
+
+    $sid = (int)$r['id_sucursal'];
+    $pid = (int)$r['id_producto'];
+    if (!isset($accCounts[$sid])) $accCounts[$sid] = [];
+    if (!isset($accCounts[$sid][$pid])) $accCounts[$sid][$pid] = 0;
+    $accCounts[$sid][$pid]++; // suma dentro de los filtros actuales
+  } else {
+    $equiposTotal++;
+    if ($estatus === 'Disponible') $equiposDisp++;
+    if ($estatus === 'En tránsito') $equiposTrans++;
+  }
 }
+
+$totalFilas = count($rows);
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 ?>
@@ -109,37 +141,41 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
     </div>
   </div>
 
-  <!-- KPIs -->
+  <!-- KPIs (separados por tipo) -->
   <div class="row g-3 mt-1">
-    <div class="col-12 col-md-4">
-      <div class="card card-surface p-3 h-100">
-        <div class="stat">
-          <div class="icon"><i class="bi bi-box-seam"></i></div>
-          <div>
-            <div class="small-muted">Total de equipos</div>
-            <div class="h4 m-0 kpi"><?= (int)$totalEquipos ?></div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="col-6 col-md-4">
+    <div class="col-6 col-md-3">
       <div class="card card-surface p-3 h-100">
         <div class="stat">
           <div class="icon"><i class="bi bi-phone"></i></div>
           <div>
-            <div class="small-muted">Disponibles</div>
-            <div class="h4 m-0 kpi"><?= (int)$porEstatus['Disponible'] ?></div>
+            <div class="small-muted">Total equipos</div>
+            <div class="h4 m-0 kpi"><?= (int)$equiposTotal ?></div>
+            <div class="small-muted">Disp.: <strong><?= (int)$equiposDisp ?></strong> · Tránsito: <strong><?= (int)$equiposTrans ?></strong></div>
           </div>
         </div>
       </div>
     </div>
-    <div class="col-6 col-md-4">
+    <div class="col-6 col-md-3">
       <div class="card card-surface p-3 h-100">
         <div class="stat">
-          <div class="icon"><i class="bi bi-truck"></i></div>
+          <div class="icon"><i class="bi bi-usb-symbol"></i></div>
           <div>
-            <div class="small-muted">En tránsito</div>
-            <div class="h4 m-0 kpi"><?= (int)$porEstatus['En tránsito'] ?></div>
+            <div class="small-muted">Total accesorios</div>
+            <div class="h4 m-0 kpi"><?= (int)$accesTotal ?></div>
+            <div class="small-muted">Disp.: <strong><?= (int)$accesDisp ?></strong> · Tránsito: <strong><?= (int)$accesTrans ?></strong></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- KPIs originales resumidos -->
+    <div class="col-12 col-md-6">
+      <div class="card card-surface p-3 h-100">
+        <div class="stat">
+          <div class="icon"><i class="bi bi-box-seam"></i></div>
+          <div>
+            <div class="small-muted">Total de ítems (filas)</div>
+            <div class="h4 m-0 kpi"><?= (int)$totalFilas ?></div>
+            <div class="small-muted">En vista actual</div>
           </div>
         </div>
       </div>
@@ -178,7 +214,7 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
     <div class="mt-3 d-flex justify-content-end gap-2">
       <button class="btn btn-primary"><i class="bi bi-search"></i> Buscar</button>
       <a href="panel.php" class="btn btn-secondary">Limpiar</a>
-      <a href="exportar_inventario_excel.php" class="btn btn-success">
+      <a href="exportar_inventario_excel.php<?= $filtroImei !== '' ? ('?'.http_build_query(['imei'=>$filtroImei])) : '' ?>" class="btn btn-success">
         <i class="bi bi-file-earmark-excel"></i> Exportar a Excel
       </a>
     </div>
@@ -188,7 +224,7 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
   <div class="card card-surface mt-3 mb-5">
     <div class="p-3 pb-0 d-flex align-items-center justify-content-between flex-wrap gap-2">
       <h5 class="m-0"><i class="bi bi-table me-2"></i>Inventario</h5>
-      <div class="small-muted">Mostrando <span id="countVisible"><?= (int)$totalEquipos ?></span> de <?= (int)$totalEquipos ?> equipos</div>
+      <div class="small-muted">Mostrando <span id="countVisible"><?= (int)$totalFilas ?></span> de <?= (int)$totalFilas ?> ítems</div>
     </div>
     <div class="p-3 pt-2 tbl-wrap">
       <table id="tablaInv" class="table table-hover align-middle mb-0">
@@ -201,6 +237,8 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
             <th>Capacidad</th>
             <th style="min-width:210px;">IMEI1</th>
             <th style="min-width:210px;">IMEI2</th>
+            <th style="min-width:120px;">Tipo</th>
+            <th style="min-width:110px;">Cantidad</th> <!-- NUEVA -->
             <th style="min-width:130px;">Estatus</th>
             <th style="min-width:150px;">Fecha Ingreso</th>
           </tr>
@@ -209,6 +247,15 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
           <?php foreach ($rows as $row): 
             $estatus = $row['estatus'] ?? '';
             $chip = $estatus === 'Disponible' ? 'chip-success' : 'chip-warn';
+
+            $esAcc = (strcasecmp((string)($row['tipo_producto'] ?? ''), 'Accesorio') === 0);
+            if ($esAcc) {
+              $sid = (int)$row['id_sucursal'];
+              $pid = (int)$row['id_producto'];
+              $cantidad = $accCounts[$sid][$pid] ?? 1;
+            } else {
+              $cantidad = 1;
+            }
           ?>
             <tr data-status="<?= h($estatus) ?>">
               <td><span class="badge text-bg-secondary">#<?= (int)$row['id'] ?></span></td>
@@ -240,6 +287,8 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
                   <span class="text-muted">-</span>
                 <?php endif; ?>
               </td>
+              <td><?= h($row['tipo_producto'] ?? '-') ?></td>
+              <td><strong><?= (int)$cantidad ?></strong></td>
               <td>
                 <span class="chip <?= $chip ?>">
                   <?php if ($estatus === 'Disponible'): ?><i class="bi bi-check2-circle"></i><?php else: ?><i class="bi bi-truck"></i><?php endif; ?>
