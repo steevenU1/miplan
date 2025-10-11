@@ -1,6 +1,6 @@
 <?php
-// compras_nueva.php — Central 2.0
-// Captura de factura de compra por renglones de MODELO (catálogo formal) + Otros cargos
+// compras_nueva.php — Central 2.0 (captura de compras por modelo + otros cargos)
+// Compatible con accesorios del catálogo SIN IMEI (sin requerir columna requiere_imei en BD)
 
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 if (!isset($_SESSION['id_usuario'])) { header("Location: index.php"); exit(); }
@@ -12,12 +12,10 @@ $ROL         = $_SESSION['rol'] ?? 'Ejecutivo';
 $ID_USUARIO  = (int)($_SESSION['id_usuario'] ?? 0);
 $ID_SUCURSAL = (int)($_SESSION['id_sucursal'] ?? 0);
 
-// Permisos
 if (!in_array($ROL, ['Admin','Logistica'])) {
   header("Location: 403.php"); exit();
 }
 
-// Helper seguro
 if (!function_exists('h')) { function h($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); } }
 
 // Proveedores
@@ -30,7 +28,7 @@ $sucursales = [];
 $res2 = $conn->query("SELECT id, nombre FROM sucursales ORDER BY nombre");
 while ($row = $res2->fetch_assoc()) { $sucursales[] = $row; }
 
-// Catálogo de modelos
+// Catálogo de modelos (NO usa requiere_imei)
 $modelos = [];
 $res3 = $conn->query("
   SELECT id, marca, modelo, codigo_producto, color, ram, capacidad
@@ -47,11 +45,8 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
   <title>Compras · Nueva factura — Central 2.0</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="/img/favicon.ico?v=7" sizes="any">
-
-  <!-- Bootstrap & Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
-
   <style>
     body{ background:#f6f7fb; }
     .page-head{ display:flex; align-items:center; justify-content:space-between; gap:16px; margin:18px auto 8px; padding:6px 4px; }
@@ -61,9 +56,8 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
     .card-soft{ border:1px solid #e9ecf1; border-radius:16px; box-shadow:0 2px 12px rgba(16,24,40,.06); }
     .kicker{ color:#6b7280; font-size:.9rem; }
 
-    /* Tabla renglones (modelos) */
     #tablaDetalle th, #tablaDetalle td{ white-space:nowrap; }
-    #tablaDetalle .col-codigo{ min-width: 320px; }
+    #tablaDetalle .col-codigo{ min-width: 360px; }
     #tablaDetalle .col-color{ width: 120px; }
     #tablaDetalle .col-ram{ width: 110px; }
     #tablaDetalle .col-cap{ width: 130px; }
@@ -79,23 +73,19 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
     #tablaDetalle input.num{ text-align:right; }
     #tablaDetalle input[readonly]{ background:#f8fafc; cursor:not-allowed; }
 
-    /* Tabla otros cargos */
     #tablaCargos th, #tablaCargos td{ white-space:nowrap; }
     #tablaCargos .form-control{ padding:.35rem .55rem; }
     #tablaCargos input.num{ text-align:right; }
 
-    /* Resumen */
     .summary{ position:sticky; top:12px; border-radius:16px; border:1px solid #e9ecf1; background:#fff; box-shadow:0 2px 10px rgba(16,24,40,.06);}
     .summary .rowline{ display:flex; align-items:center; justify-content:space-between; margin-bottom:.35rem; }
     .summary .total{ font-size:1.35rem; font-weight:800; }
-
     .hint{ font-size:.8rem; color:#6b7280; }
   </style>
 </head>
 <body>
 <div class="container-fluid px-3 px-lg-4">
 
-  <!-- Encabezado -->
   <div class="page-head">
     <div>
       <h2 class="page-title">🧾 Nueva factura de compra</h2>
@@ -109,7 +99,6 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
   </div>
 
   <form action="compras_guardar.php" method="POST" id="formCompra">
-    <!-- Datos de la factura -->
     <div class="card card-soft mb-3">
       <div class="card-body">
         <div class="row g-3">
@@ -174,13 +163,12 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
 
     <div class="row g-3">
       <div class="col-lg-9">
-        <!-- Detalle (modelos) -->
         <div class="card card-soft">
           <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-2">
               <div>
                 <h5 class="mb-0">Detalle por modelo</h5>
-                <div class="kicker">Captura por <b>código o marca/modelo</b>. El IVA por renglón parte del valor default.</div>
+                <div class="kicker">Captura por <b>código o marca/modelo</b>. El IVA por renglón parte del default.</div>
               </div>
               <div class="d-flex gap-2">
                 <a class="btn btn-sm btn-outline-secondary rounded-pill" href="modelos.php" target="_blank"><i class="bi bi-plus-lg me-1"></i>Nuevo modelo</a>
@@ -211,18 +199,17 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
             </div>
 
             <div class="hint mt-2">
-              Tip: marca/desmarca “Requiere IMEI” si el modelo lo amerita (p. ej. accesorios).
+              Tip: para **accesorios** desmarca el switch; se enviará <code>requiere_imei=0</code> y el backend sumará por cantidad.
             </div>
           </div>
         </div>
 
-        <!-- Otros cargos (opcional) -->
         <div class="card card-soft mt-3">
           <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-2">
               <div>
                 <h6 class="mb-0">Otros cargos (opcional)</h6>
-                <div class="kicker">Ej.: seguro de protección, flete, cargo por morosidad, etc.</div>
+                <div class="kicker">Ej.: seguro, flete, moras…</div>
               </div>
               <button type="button" class="btn btn-sm btn-outline-primary rounded-pill" id="btnAddCargo">
                 <i class="bi bi-plus-circle me-1"></i>Agregar cargo
@@ -245,12 +232,11 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
                 <tbody></tbody>
               </table>
             </div>
-            <small class="text-muted">Se envían como <code>extra_desc[]</code>, <code>extra_monto[]</code> y <code>extra_iva_porcentaje[]</code>.</small>
+            <small class="text-muted">Se envían como <code>extra_desc[]</code>, <code>extra_monto[]</code>, <code>extra_iva_porcentaje[]</code>.</small>
           </div>
         </div>
       </div>
 
-      <!-- Resumen -->
       <div class="col-lg-3">
         <div class="summary p-3">
           <div class="rowline"><strong>Subtotal</strong><strong id="lblSubtotal">$0.00</strong></div>
@@ -262,7 +248,6 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
           <input type="hidden" name="iva" id="inpIVA">
           <input type="hidden" name="total" id="inpTotal">
 
-          <!-- Hidden para pago contado -->
           <input type="hidden" name="registrar_pago" id="registrarPago" value="0">
           <input type="hidden" name="pago_monto" id="pagoMonto">
           <input type="hidden" name="pago_metodo" id="pagoMetodo">
@@ -281,7 +266,6 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
   </form>
 </div>
 
-<!-- Datalist global -->
 <datalist id="dlModelos">
   <?php foreach ($modelos as $m):
     $desc = trim(($m['marca'] ?? '').' '.($m['modelo'] ?? '').' · '.($m['color']??'').' · '.($m['ram']??'').' · '.($m['capacidad']??'')); 
@@ -291,7 +275,7 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
   <?php endforeach; ?>
 </datalist>
 
-<!-- Modal de confirmación previo a guardar -->
+<!-- Modal confirmación -->
 <div class="modal fade" id="modalConfirm" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
@@ -300,7 +284,6 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
       </div>
       <div class="modal-body">
-        <p class="mb-2">Comprueba que los datos capturados <b>(Modelos, Colores y costos)</b> sean correctos.</p>
         <div class="table-responsive">
           <table class="table table-sm table-striped align-middle">
             <thead class="table-light">
@@ -317,17 +300,17 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
             <tbody id="cfBody"></tbody>
           </table>
         </div>
-        <small class="text-muted">Si ves algún dato incorrecto, cierra este cuadro y corrígelo antes de guardar.</small>
+        <small class="text-muted">Cierra para corregir si algo no cuadra.</small>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Revisar de nuevo</button>
-        <button type="button" class="btn btn-primary" id="btnConfirmarDatos">Sí, todo está correcto</button>
+        <button type="button" class="btn btn-primary" id="btnConfirmarDatos">Sí, todo correcto</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Modal de pago (Contado) -->
+<!-- Modal pago contado -->
 <div class="modal fade" id="modalPago" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -354,7 +337,7 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
           </div>
           <div class="col-12">
             <label class="form-label">Referencia</label>
-            <input type="text" id="mpRef" class="form-control" maxlength="80" placeholder="Folio, banco, últimos 4, etc. (opcional)">
+            <input type="text" id="mpRef" class="form-control" maxlength="80" placeholder="Folio, banco… (opcional)">
           </div>
           <div class="col-6">
             <label class="form-label">Importe pagado</label>
@@ -365,7 +348,7 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
             <input type="text" id="mpNota" class="form-control" maxlength="120" placeholder="Opcional">
           </div>
         </div>
-        <small class="text-muted d-block mt-2">El pago se guardará en <strong>compras_pagos</strong> junto con la factura.</small>
+        <small class="text-muted d-block mt-2">El pago se guardará junto con la factura.</small>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -376,24 +359,18 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
 </div>
 
 <!-- JS -->
-<!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script> -->
-
 <script>
-  // Datos PHP -> JS
   const modelos = <?= json_encode($modelos, JSON_UNESCAPED_UNICODE) ?>;
 
-  // Elementos base
   const tbody = document.querySelector('#tablaDetalle tbody');
   const cargosBody = document.querySelector('#tablaCargos tbody');
   const ivaDefault = document.getElementById('ivaDefault');
 
-  // vencimiento / condición
   const fechaFacturaEl = document.querySelector('input[name="fecha_factura"]');
   const fechaVencEl    = document.querySelector('input[name="fecha_vencimiento"]');
   const diasVencEl     = document.getElementById('diasVencimiento');
   const condicionPagoEl= document.getElementById('condicionPago');
 
-  // modales
   const modalConfirm = new bootstrap.Modal(document.getElementById('modalConfirm'));
   const cfBody       = document.getElementById('cfBody');
 
@@ -401,27 +378,13 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
   const mpTotalEl   = document.getElementById('mpTotal');
   const mpFechaEl   = document.getElementById('mpFecha');
   const mpMetodoEl  = document.getElementById('mpMetodo');
-  const mpRefEl     = document.getElementById('mpRef');
-  const mpMontoEl   = document.getElementById('mpMonto');
-  const mpNotaEl    = document.getElementById('mpNota');
 
-  const regPagoEl   = document.getElementById('registrarPago');
-  const pagoMontoEl = document.getElementById('pagoMonto');
-  const pagoMetodoEl= document.getElementById('pagoMetodo');
-  const pagoRefEl   = document.getElementById('pagoReferencia');
-  const pagoFechaEl = document.getElementById('pagoFecha');
-  const pagoNotaEl  = document.getElementById('pagoNota');
-
-  let rowIdx = 0;
-  let cargoIdx = 0;
-  let forceSubmit = false; // evita loop al reenviar
+  let rowIdx = 0, cargoIdx = 0, forceSubmit = false;
 
   function formato(n){ return new Intl.NumberFormat('es-MX',{minimumFractionDigits:2, maximumFractionDigits:2}).format(n||0); }
 
   function calcTotales(){
     let sub=0, iva=0, tot=0;
-
-    // Modelos
     document.querySelectorAll('#tablaDetalle tbody tr.renglon').forEach(tr=>{
       const qty = parseFloat(tr.querySelector('.qty').value) || 0;
       const pu  = parseFloat(tr.querySelector('.pu').value)  || 0;
@@ -434,20 +397,15 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
       tr.querySelector('.rtot').textContent = '$'+formato(rtot);
       sub+=rsub; iva+=riva; tot+=rtot;
     });
-
-    // Otros cargos
     document.querySelectorAll('#tablaCargos tbody tr.cargo').forEach(tr=>{
       const imp = parseFloat(tr.querySelector('.importe').value) || 0;
       const ivp = parseFloat(tr.querySelector('.ivp').value)     || 0;
-      const rsub = imp;
-      const riva = rsub * (ivp/100.0);
-      const rtot = rsub + riva;
+      const rsub = imp, riva = rsub * (ivp/100.0), rtot = rsub + riva;
       tr.querySelector('.rsub').textContent = '$'+formato(rsub);
       tr.querySelector('.riva').textContent = '$'+formato(riva);
       tr.querySelector('.rtot').textContent = '$'+formato(rtot);
       sub+=rsub; iva+=riva; tot+=rtot;
     });
-
     document.getElementById('lblSubtotal').textContent = '$'+formato(sub);
     document.getElementById('lblIVA').textContent      = '$'+formato(iva);
     document.getElementById('lblTotal').textContent    = '$'+formato(tot);
@@ -456,9 +414,9 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
     document.getElementById('inpTotal').value    = tot.toFixed(2);
   }
 
-  // Mapas para localizar por código o etiqueta
+  // Mapas catálogo
   function etiqueta(m){ return (m.marca + ' ' + m.modelo + (m.codigo_producto ? (' · ' + m.codigo_producto) : '')).trim(); }
-  const byCodigo = {}; const byEtiqueta = {};
+  const byCodigo = {}, byEtiqueta = {};
   modelos.forEach(m => {
     if (m.codigo_producto) byCodigo[m.codigo_producto] = m;
     byEtiqueta[etiqueta(m).toLowerCase()] = m;
@@ -470,15 +428,20 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
     tr.querySelector('.ram').value       = m.ram || '';
     tr.querySelector('.capacidad').value = m.capacidad || '';
     const mm = tr.querySelector('.mm-buscar');
-    mm.classList.remove('is-invalid');
-    mm.setCustomValidity('');
+    mm.classList.remove('is-invalid'); mm.setCustomValidity('');
+
+    // Como la BD no trae requiere_imei, por default lo dejamos en 1 (equipo).
+    // El usuario puede desmarcar para accesorio.
+    const chk = tr.querySelector('.reqi');
+    const hiddenReq = tr.querySelector('.reqi-hidden');
+    if (!hiddenReq.value) { // si no se ha definido, inicializa a 1
+      chk.checked = true;
+      hiddenReq.value = '1';
+    }
   }
 
-  // Validación de PU: deja capturar 0 pero NO deja enviar si queda en 0 o negativo.
   function wirePrecioUnitarioValidation(inputPU){
-    inputPU.min = '0';        // permite 0 mientras capturas
-    inputPU.step = '0.01';
-
+    inputPU.min = '0'; inputPU.step = '0.01';
     const validatePU = () => {
       const v = parseFloat(inputPU.value);
       if (!isFinite(v) || v <= 0) {
@@ -489,8 +452,6 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
         inputPU.setCustomValidity('');
       }
     };
-
-    // Validamos cuando terminas de editar
     inputPU.addEventListener('blur', validatePU);
     inputPU.addEventListener('change', validatePU);
   }
@@ -505,7 +466,6 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
           <input type="text" class="form-control mm-buscar" list="dlModelos"
                  placeholder="Escribe código o marca/modelo" autocomplete="off" required>
           <input type="hidden" name="id_modelo[${idx}]" class="mm-id">
-          <div class="invalid-feedback">Elige un código válido del catálogo.</div>
         </div>
       </td>
       <td class="col-color"><input type="text" class="form-control color" name="color[${idx}]" readonly></td>
@@ -520,7 +480,10 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
       <td class="col-sub rsub">$0.00</td>
       <td class="col-iva riva">$0.00</td>
       <td class="col-tot rtot">$0.00</td>
-      <td class="col-req"><input type="hidden" name="requiere_imei[${idx}]" value="0"><input type="checkbox" class="form-check-input reqi" name="requiere_imei[${idx}]" value="1" checked></td>
+      <td class="col-req">
+        <input type="checkbox" class="form-check-input reqi" value="1" checked>
+        <input type="hidden" class="reqi-hidden" name="requiere_imei[${idx}]" value="1">
+      </td>
       <td class="col-acc"><button type="button" class="btn btn-sm btn-outline-danger rounded-pill btnQuitar" title="Quitar">&times;</button></td>
     `;
     tbody.appendChild(tr);
@@ -531,8 +494,9 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
     const input  = tr.querySelector('.mm-buscar');
     const hidden = tr.querySelector('.mm-id');
     const pu     = tr.querySelector('.pu');
+    const chk    = tr.querySelector('.reqi');
+    const hiddenReq = tr.querySelector('.reqi-hidden');
 
-    // candado PU (pero dejando default 0)
     wirePrecioUnitarioValidation(pu);
 
     function handleTryApply() {
@@ -542,15 +506,31 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
         aplicarModeloEnRenglon(m, tr);
       } else {
         hidden.value = '';
-        input.classList.remove('is-invalid');
-        input.setCustomValidity('');
+        if (chk.checked) { // si es equipo (requiere IMEI), exige modelo válido
+          input.classList.add('is-invalid');
+          input.setCustomValidity('Elige un código válido del catálogo.');
+        } else {
+          input.classList.remove('is-invalid');
+          input.setCustomValidity('');
+        }
       }
     }
 
-    // Robustez para datalist/pegado + guardar
     input.addEventListener('input', handleTryApply);
     input.addEventListener('change', handleTryApply);
     input.addEventListener('blur', handleTryApply);
+
+    // El checkbox solo es UI; el hidden es lo que se envía
+    chk.addEventListener('change', () => {
+      hiddenReq.value = chk.checked ? '1' : '0';
+      if (chk.checked && !hidden.value) {
+        input.classList.add('is-invalid');
+        input.setCustomValidity('Elige un código válido del catálogo.');
+      } else {
+        input.classList.remove('is-invalid');
+        input.setCustomValidity('');
+      }
+    });
 
     calcTotales();
   }
@@ -560,28 +540,15 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
     const tr = document.createElement('tr');
     tr.className = 'cargo';
     tr.innerHTML = `
-      <td>
-        <input type="text" class="form-control desc" name="extra_desc[${idx}]"
-               placeholder="Descripción del cargo (p. ej. Seguro)" maxlength="120" required>
-      </td>
-      <td>
-        <input type="number" class="form-control num importe" name="extra_monto[${idx}]"
-               step="0.01" min="0" value="0" required>
-      </td>
-        <td>
-        <input type="number" class="form-control num ivp" name="extra_iva_porcentaje[${idx}]"
-               step="0.01" min="0" value="${ivaDefault.value || 16}">
-      </td>
-      <td class="rsub">$0.00</td>
-      <td class="riva">$0.00</td>
-      <td class="rtot">$0.00</td>
+      <td><input type="text" class="form-control desc" name="extra_desc[${idx}]" placeholder="Descripción" maxlength="120" required></td>
+      <td><input type="number" class="form-control num importe" name="extra_monto[${idx}]" step="0.01" min="0" value="0" required></td>
+      <td><input type="number" class="form-control num ivp" name="extra_iva_porcentaje[${idx}]" step="0.01" min="0" value="${ivaDefault.value || 16}"></td>
+      <td class="rsub">$0.00</td><td class="riva">$0.00</td><td class="rtot">$0.00</td>
       <td><button type="button" class="btn btn-sm btn-outline-danger rounded-pill btnQuitar">&times;</button></td>
     `;
     cargosBody.appendChild(tr);
-
     tr.querySelectorAll('input').forEach(el => el.addEventListener('input', calcTotales));
     tr.querySelector('.btnQuitar').addEventListener('click', () => { tr.remove(); calcTotales(); });
-
     calcTotales();
   }
 
@@ -593,168 +560,106 @@ while ($row = $res3->fetch_assoc()) { $modelos[] = $row; }
     calcTotales();
   });
 
-  // arranca con 1 renglón de modelo
+  // arranca con 1 renglón
   agregarRenglon();
 
-  // ===== SUBMIT: validación, confirmación y (si aplica) pago contado =====
+  // ===== Submit =====
   document.getElementById('formCompra').addEventListener('submit', function(e){
     if (forceSubmit) return;
+    if (!tbody.querySelector('tr')) { e.preventDefault(); alert('Agrega al menos un renglón'); return; }
 
-    if (!tbody.querySelector('tr')) {
-      e.preventDefault(); alert('Agrega al menos un renglón'); return;
-    }
+    // Pre-aplicar por seguridad (si no hubo blur)
+    document.querySelectorAll('#tablaDetalle tbody tr.renglon .mm-buscar').forEach(inp=>{
+      const tr = inp.closest('tr');
+      const hidden = tr.querySelector('.mm-id');
+      const chk = tr.querySelector('.reqi');
+      const raw = (inp.value || '').trim();
+      const m = byCodigo[raw] || byEtiqueta[raw.toLowerCase()];
+      if (m) aplicarModeloEnRenglon(m, tr);
+      if (chk.checked && !m) { inp.classList.add('is-invalid'); inp.setCustomValidity('Elige un código válido del catálogo.'); }
+    });
 
-    // Pre-aplicar por seguridad (por si no hubo blur/change)
-    document.querySelectorAll('#tablaDetalle tbody tr.renglon .mm-buscar')
-      .forEach(inp => {
-        const tr = inp.closest('tr');
-        const hidden = tr.querySelector('.mm-id');
-        const raw = (inp.value || '').trim();
-        const m = byCodigo[raw] || byEtiqueta[raw.toLowerCase()];
-        if (m) aplicarModeloEnRenglon(m, tr);
-      });
-
-    // Validaciones por renglón (sólo lo esencial)
+    // Valida filas
     let ok = true; let msg = '';
     const rows = document.querySelectorAll('#tablaDetalle tbody tr.renglon');
     rows.forEach(tr => {
-      const hidden = tr.querySelector('.mm-id');
-      const qty    = parseFloat(tr.querySelector('.qty').value);
-      const puEl   = tr.querySelector('.pu');
-      const pu     = parseFloat(puEl.value);
+      const idm   = tr.querySelector('.mm-id').value;
+      const qty   = parseFloat(tr.querySelector('.qty').value);
+      const puEl  = tr.querySelector('.pu');
+      const pu    = parseFloat(puEl.value);
 
-      if (!hidden.value) { ok = false; msg = 'Verifica que todos los renglones tengan un código válido.'; }
-      if (!isFinite(qty) || qty < 1) { ok = false; msg = 'Hay cantidades inválidas (deben ser ≥ 1).'; }
-      if (!isFinite(pu) || pu <= 0) {
-        ok = false; msg = 'Hay precios unitarios en 0 o inválidos.';
-        puEl.classList.add('is-invalid'); puEl.setCustomValidity('El precio unitario debe ser mayor a 0.');
-      }
+      if (!isFinite(qty) || qty < 1) { ok=false; msg='Hay cantidades inválidas (≥1).'; }
+      if (!isFinite(pu)  || pu <= 0) { ok=false; msg='Hay precios unitarios en 0 o inválidos.'; puEl.classList.add('is-invalid'); puEl.setCustomValidity('> 0'); }
+      if (!idm) { ok=false; msg='Verifica que todos los renglones tengan un modelo/código válido.'; }
     });
 
     if (!ok) { e.preventDefault(); alert(msg); return; }
 
-    // Construir resumen para el modal de confirmación
-    const cfBody = document.getElementById('cfBody');
-    cfBody.innerHTML = '';
-    rows.forEach((tr, idx) => {
-      const codTxt = tr.querySelector('.mm-buscar').value || '';
-      const color  = tr.querySelector('.color').value || '';
-      const ram    = tr.querySelector('.ram').value || '';
-      const cap    = tr.querySelector('.capacidad').value || '';
-      const qty    = parseFloat(tr.querySelector('.qty').value) || 0;
-      const pu     = parseFloat(tr.querySelector('.pu').value) || 0;
-      const trHtml = `
+    // Resumen al modal
+    const cfBody = document.getElementById('cfBody'); cfBody.innerHTML='';
+    rows.forEach((tr, i)=>{
+      const cod = tr.querySelector('.mm-buscar').value || '';
+      const color=tr.querySelector('.color').value||'';
+      const ram=tr.querySelector('.ram').value||'';
+      const cap=tr.querySelector('.capacidad').value||'';
+      const qty=parseFloat(tr.querySelector('.qty').value)||0;
+      const pu =parseFloat(tr.querySelector('.pu').value)||0;
+      cfBody.insertAdjacentHTML('beforeend', `
         <tr>
-          <td>${idx+1}</td>
-          <td>${htmlesc(codTxt) || '-'}</td>
-          <td>${htmlesc(color) || '-'}</td>
-          <td>${htmlesc(ram) || '-'}</td>
-          <td>${htmlesc(cap) || '-'}</td>
-          <td class="text-end">${qty}</td>
-          <td class="text-end">$${formato(pu)}</td>
+          <td>${i+1}</td><td>${htmlesc(cod)}</td><td>${htmlesc(color)}</td>
+          <td>${htmlesc(ram)}</td><td>${htmlesc(cap)}</td>
+          <td class="text-end">${qty}</td><td class="text-end">$${formato(pu)}</td>
         </tr>
-      `;
-      cfBody.insertAdjacentHTML('beforeend', trHtml);
+      `);
     });
 
-    // Mostrar modal de confirmación
     e.preventDefault();
     modalConfirm.show();
   });
 
-  // Confirmación final del usuario
+  // Confirmación final
   document.getElementById('btnConfirmarDatos').addEventListener('click', () => {
     modalConfirm.hide();
-
-    // Si es contado, abrimos modal de pago; si no, enviamos directo
     if (condicionPagoEl.value === 'Contado') {
       calcTotales();
       const total = parseFloat(document.getElementById('inpTotal').value || '0') || 0;
-      mpTotalEl.textContent = '$' + formato(total);
-      mpMontoEl.value = total.toFixed(2);
-      mpFechaEl.value = fechaFacturaEl.value || new Date().toISOString().slice(0,10);
+      document.getElementById('mpTotal').textContent = '$' + formato(total);
+      document.getElementById('mpMonto').value = total.toFixed(2);
+      document.getElementById('mpFecha').value = fechaFacturaEl.value || new Date().toISOString().slice(0,10);
       modalPago.show();
     } else {
-      forceSubmit = true;
-      document.getElementById('formCompra').submit();
+      forceSubmit = true; document.getElementById('formCompra').submit();
     }
   });
 
-  // Confirmar modal contado
+  // Confirmar pago contado
   document.getElementById('btnConfirmarPago').addEventListener('click', () => {
-    const monto = parseFloat(mpMontoEl.value || '0');
-    if (isNaN(monto) || monto <= 0) { alert('Importe de pago inválido'); return; }
+    const monto = parseFloat(document.getElementById('mpMonto').value || '0');
+    if (isNaN(monto) || monto <= 0) { alert('Importe inválido'); return; }
     document.getElementById('registrarPago').value = '1';
     document.getElementById('pagoMonto').value  = monto.toFixed(2);
-    document.getElementById('pagoMetodo').value = mpMetodoEl.value || 'Efectivo';
-    document.getElementById('pagoReferencia').value = mpRefEl.value.trim();
-    document.getElementById('pagoFecha').value  = mpFechaEl.value || new Date().toISOString().slice(0,10);
-    document.getElementById('pagoNota').value   = mpNotaEl.value.trim();
-
-    forceSubmit = true;
-    modalPago.hide();
-    document.getElementById('formCompra').submit();
+    document.getElementById('pagoMetodo').value = document.getElementById('mpMetodo').value || 'Efectivo';
+    document.getElementById('pagoReferencia').value = document.getElementById('mpRef').value.trim();
+    document.getElementById('pagoFecha').value  = document.getElementById('mpFecha').value || new Date().toISOString().slice(0,10);
+    document.getElementById('pagoNota').value   = (document.getElementById('mpNota').value || '').trim();
+    forceSubmit = true; modalPago.hide(); document.getElementById('formCompra').submit();
   });
 
-  // ===== Vencimiento (Crédito) =====
-  function ymd(dateObj){
-    const tzOffset = dateObj.getTimezoneOffset();
-    const local = new Date(dateObj.getTime() - tzOffset*60000);
-    return local.toISOString().slice(0,10);
-  }
-  function sumarDias(baseStr, dias){
-    const d = new Date(baseStr + 'T00:00:00'); if (isNaN(d.getTime())) return '';
-    const n = parseInt(dias, 10); if (isNaN(n)) return '';
-    d.setDate(d.getDate() + n); return ymd(d);
-  }
-  function setContadoUI(){
-    if (fechaFacturaEl.value) fechaVencEl.value = fechaFacturaEl.value;
-    diasVencEl.value = 0;
-    diasVencEl.readOnly = true; fechaVencEl.readOnly = true;
-    diasVencEl.classList.add('bg-light'); fechaVencEl.classList.add('bg-light');
-  }
-  function setCreditoUI(){
-    diasVencEl.readOnly = false; fechaVencEl.readOnly = false;
-    diasVencEl.classList.remove('bg-light'); fechaVencEl.classList.remove('bg-light');
-    recalcularFechaVenc();
-  }
-  function recalcularFechaVenc(){
-    if (condicionPagoEl.value !== 'Crédito') return;
-    const f = fechaFacturaEl.value; const dias = diasVencEl.value;
-    if (f && dias !== '') {
-      const fv = sumarDias(f, dias); if (fv) fechaVencEl.value = fv;
-    }
-  }
-  function recalcularDias(){
-    if (condicionPagoEl.value !== 'Crédito') return;
-    const f = fechaFacturaEl.value; const fv = fechaVencEl.value;
-    if (f && fv) {
-      const df = new Date(f + 'T00:00:00'); const dv = new Date(fv + 'T00:00:00');
-      if (!isNaN(df.getTime()) && !isNaN(dv.getTime())) {
-        const diffDays = Math.round((dv - df) / (1000*60*60*24));
-        if (diffDays >= 0) diasVencEl.value = diffDays;
-      }
-    }
-  }
-  fechaFacturaEl.addEventListener('change', () => {
-    if (condicionPagoEl.value === 'Contado') setContadoUI(); else recalcularFechaVenc();
-  });
-  diasVencEl.addEventListener('input', recalcularFechaVenc);
-  fechaVencEl.addEventListener('change', recalcularDias);
-  condicionPagoEl.addEventListener('change', () => {
-    if (condicionPagoEl.value === 'Contado') setContadoUI(); else setCreditoUI();
-  });
+  // Utilidades de crédito
+  function ymd(dateObj){ const tz=dateObj.getTimezoneOffset(); const local=new Date(dateObj.getTime()-tz*60000); return local.toISOString().slice(0,10); }
+  function sumarDias(baseStr,dias){ const d=new Date(baseStr+'T00:00:00'); if (isNaN(d.getTime())) return ''; const n=parseInt(dias,10); if (isNaN(n)) return ''; d.setDate(d.getDate()+n); return ymd(d); }
+  function setContadoUI(){ if (fechaFacturaEl.value) fechaVencEl.value=fechaFacturaEl.value; diasVencEl.value=0; diasVencEl.readOnly=true; fechaVencEl.readOnly=true; diasVencEl.classList.add('bg-light'); fechaVencEl.classList.add('bg-light'); }
+  function setCreditoUI(){ diasVencEl.readOnly=false; fechaVencEl.readOnly=false; diasVencEl.classList.remove('bg-light'); fechaVencEl.classList.remove('bg-light'); recalcularFechaVenc(); }
+  function recalcularFechaVenc(){ if (condicionPagoEl.value!=='Crédito') return; const f=fechaFacturaEl.value; const dias=diasVencEl.value; if (f && dias!==''){ const fv=sumarDias(f,dias); if (fv) fechaVencEl.value=fv; } }
+  function recalcularDias(){ if (condicionPagoEl.value!=='Crédito') return; const f=fechaFacturaEl.value; const fv=fechaVencEl.value; if (f && fv){ const df=new Date(f+'T00:00:00'); const dv=new Date(fv+'T00:00:00'); if(!isNaN(df.getTime()) && !isNaN(dv.getTime())){ const diff=Math.round((dv-df)/(1000*60*60*24)); if (diff>=0) diasVencEl.value=diff; } } }
+  fechaFacturaEl.addEventListener('change', ()=>{ if (condicionPagoEl.value==='Contado') setContadoUI(); else recalcularFechaVenc(); });
+  diasVencEl.addEventListener('input',recalcularFechaVenc);
+  fechaVencEl.addEventListener('change',recalcularDias);
+  condicionPagoEl.addEventListener('change', ()=>{ if (condicionPagoEl.value==='Contado') setContadoUI(); else setCreditoUI(); });
   setContadoUI();
 
-  // Utilidad para escapar HTML en el resumen
-  function htmlesc(s){
-    return String(s)
-      .replaceAll('&','&amp;')
-      .replaceAll('<','&lt;')
-      .replaceAll('>','&gt;')
-      .replaceAll('"','&quot;')
-      .replaceAll("'",'&#039;');
-  }
+  // Escapar HTML
+  function htmlesc(s){ return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#039;"); }
 </script>
 </body>
 </html>

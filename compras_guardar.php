@@ -73,6 +73,7 @@ if ($condicion_pago === 'Contado') {
 
 // ---------- Detalle (indexados por fila) ----------
 $id_modelo   = $_POST['id_modelo'] ?? [];         // [idx] => id
+$mm_text     = $_POST['mm_text']   ?? [];         // [idx] => texto del buscador (opcional)
 $color       = $_POST['color'] ?? [];             // [idx] => str
 $ram         = $_POST['ram'] ?? [];               // [idx] => str
 $capacidad   = $_POST['capacidad'] ?? [];         // [idx] => str
@@ -83,20 +84,38 @@ $requiereMap = $_POST['requiere_imei'] ?? [];     // [idx] => "0" | "1"
 
 if (empty($id_modelo)) { die("Debes incluir al menos un renglón."); }
 
-// ---------- Otros cargos (NUEVO) ----------
-$extra_desc = $_POST['extra_desc'] ?? [];                    // [i] => str
-$extra_monto = $_POST['extra_monto'] ?? [];                  // [i] => float (base sin IVA)
-$extra_iva_porcentaje = $_POST['extra_iva_porcentaje'] ?? [];// [i] => float
+// ---------- Otros cargos ----------
+$extra_desc           = $_POST['extra_desc'] ?? [];                    // [i] => str
+$extra_monto          = $_POST['extra_monto'] ?? [];                   // [i] => float (base sin IVA)
+$extra_iva_porcentaje = $_POST['extra_iva_porcentaje'] ?? [];          // [i] => float
 
+// --- Resolver modelo por texto cuando no llega id_modelo (respaldo) ---
+function resolver_modelo(mysqli $conn, $txt){
+  $txt = trim((string)$txt);
+  if ($txt==='') return 0;
+
+  $q1 = $conn->prepare("SELECT id FROM catalogo_modelos WHERE activo=1 AND codigo_producto=? LIMIT 1");
+  $q1->bind_param('s',$txt);
+  if ($q1->execute() && ($r=$q1->get_result()) && $r->num_rows) { $id = (int)$r->fetch_assoc()['id']; $q1->close(); return $id; }
+  $q1->close();
+
+  $q2 = $conn->prepare("SELECT id FROM catalogo_modelos WHERE activo=1 AND CONCAT(marca,' ',modelo)=? LIMIT 1");
+  $q2->bind_param('s',$txt);
+  if ($q2->execute() && ($r=$q2->get_result()) && $r->num_rows) { $id = (int)$r->fetch_assoc()['id']; $q2->close(); return $id; }
+  $q2->close();
+  return 0;
+}
+
+// ---------- Construcción de renglones ----------
 $subtotal = 0.0; $iva = 0.0; $total = 0.0;
 $rows = [];
 
-// Construcción de renglones (modelos) y cálculo de totales
-foreach ($id_modelo as $idx => $idmRaw) {
-  $idm = (int)$idmRaw;
+$indices = array_keys($id_modelo);
+foreach ($indices as $idx) {
+  $idm = (int)($id_modelo[$idx] ?? 0);
+  if ($idm<=0 && isset($mm_text[$idx])) { $idm = resolver_modelo($conn, $mm_text[$idx]); }
   if ($idm<=0) continue;
 
-  // Snapshot del catálogo
   $st = $conn->prepare("SELECT marca, modelo, codigo_producto FROM catalogo_modelos WHERE id=? AND activo=1");
   $st->bind_param("i", $idm);
   $st->execute();
@@ -110,13 +129,13 @@ foreach ($id_modelo as $idx => $idmRaw) {
   $qty = max(0, (int)($cantidad[$idx] ?? 0));
   $pu  = max(0, (float)($precio[$idx] ?? 0));
   $ivp = max(0, (float)($iva_pct[$idx] ?? 0));
-  $req = (int)($requiereMap[$idx] ?? 1); // default 1
+  $req = (int)($requiereMap[$idx] ?? 1);
 
-  if ($marca==='' || $modelo==='' || $col==='' || $cap==='' || $qty<=0) continue;
+  if ($marca==='' || $modelo==='' || $qty<=0 || $pu<=0) continue;
 
-  $rsub = $qty * $pu;
-  $riva = $rsub * ($ivp/100.0);
-  $rtot = $rsub + $riva;
+  $rsub = round($qty * $pu, 2);
+  $riva = round($rsub * ($ivp/100.0), 2);
+  $rtot = round($rsub + $riva, 2);
 
   $subtotal += $rsub; $iva += $riva; $total += $rtot;
 
@@ -132,7 +151,7 @@ foreach ($id_modelo as $idx => $idmRaw) {
 
 if (empty($rows)) { die("Debes incluir al menos un renglón válido."); }
 
-// ====== Calcular extras y sumarlos a los totales (NUEVO) ======
+// ====== Extras ======
 $extraSub = 0.0; $extraIVA = 0.0;
 if (!empty($extra_desc) && is_array($extra_desc)) {
   foreach ($extra_desc as $i => $descRaw) {
@@ -141,17 +160,17 @@ if (!empty($extra_desc) && is_array($extra_desc)) {
     $ivaP  = isset($extra_iva_porcentaje[$i]) ? (float)$extra_iva_porcentaje[$i] : 0.0;
     if ($desc === '' || $monto <= 0) { continue; }
     $extraSub += $monto;
-    $extraIVA += $monto * ($ivaP/100.0);
+    $extraIVA += round($monto * ($ivaP/100.0), 2);
   }
 }
-$subtotal += $extraSub;
-$iva      += $extraIVA;
-$total     = $subtotal + $iva; // robusto
+$subtotal = round($subtotal + $extraSub, 2);
+$iva      = round($iva + $extraIVA, 2);
+$total    = round($subtotal + $iva, 2);
 
 // ---------- Transacción ----------
 $conn->begin_transaction();
 try {
-  // Encabezado (estatus se fija a 'Pendiente')
+  // Encabezado
   $sqlC = "INSERT INTO compras
             (num_factura, id_proveedor, id_sucursal, fecha_factura, fecha_vencimiento,
              condicion_pago, dias_vencimiento,
@@ -162,25 +181,25 @@ try {
 
   $stmtC->bind_param(
     'siisssidddsi',
-    $num_factura,       // s
-    $id_proveedor,      // i
-    $id_sucursal,       // i
-    $fecha_factura,     // s
-    $fecha_venc,        // s (NULL permitido)
-    $condicion_pago,    // s
-    $dias_vencimiento,  // i (o NULL)
-    $subtotal,          // d
-    $iva,               // d
-    $total,             // d
-    $notas,             // s
-    $ID_USUARIO         // i
+    $num_factura,
+    $id_proveedor,
+    $id_sucursal,
+    $fecha_factura,
+    $fecha_venc,
+    $condicion_pago,
+    $dias_vencimiento,
+    $subtotal,
+    $iva,
+    $total,
+    $notas,
+    $ID_USUARIO
   );
 
   if (!$stmtC->execute()) { throw new Exception("Insert compras: ".$stmtC->error); }
   $id_compra = $stmtC->insert_id;
   $stmtC->close();
 
-  // Detalle (incluye RAM)
+  // Detalle
   $sqlD = "INSERT INTO compras_detalle
             (id_compra, id_modelo, marca, modelo, color, ram, capacidad, requiere_imei, descripcion,
              cantidad, precio_unitario, iva_porcentaje, subtotal, iva, total)
@@ -193,26 +212,26 @@ try {
   foreach ($rows as $r) {
     $stmtD->bind_param(
       $stmtD_types,
-      $id_compra,                  // i
-      $r['id_modelo'],             // i
-      $r['marca'],                 // s
-      $r['modelo'],                // s
-      $r['color'],                 // s
-      $r['ram'],                   // s
-      $r['capacidad'],             // s
-      $r['requiere_imei'],         // i
-      $r['cantidad'],              // i
-      $r['precio_unitario'],       // d
-      $r['iva_porcentaje'],        // d
-      $r['subtotal'],              // d
-      $r['iva'],                   // d
-      $r['total']                  // d
+      $id_compra,
+      $r['id_modelo'],
+      $r['marca'],
+      $r['modelo'],
+      $r['color'],
+      $r['ram'],
+      $r['capacidad'],
+      $r['requiere_imei'],
+      $r['cantidad'],
+      $r['precio_unitario'],
+      $r['iva_porcentaje'],
+      $r['subtotal'],
+      $r['iva'],
+      $r['total']
     );
     if (!$stmtD->execute()) { throw new Exception("Insert detalle: ".$stmtD->error); }
   }
   $stmtD->close();
 
-  // ====== Guardar otros cargos (NUEVO) ======
+  // Otros cargos
   if (!empty($extra_desc) && is_array($extra_desc)) {
     $sqlX = "INSERT INTO compras_cargos
               (id_compra, descripcion, monto, iva_porcentaje, iva_monto, total, afecta_costo)
@@ -228,7 +247,7 @@ try {
 
       $ivaMonto = round($monto * ($ivaP/100.0), 2);
       $totCargo = round($monto + $ivaMonto, 2);
-      $afecta   = 0; // si luego prorrateas al costo, pon 1
+      $afecta   = 0;
 
       $stmtX->bind_param("isddddi",
         $id_compra, $desc, $monto, $ivaP, $ivaMonto, $totCargo, $afecta
@@ -238,7 +257,7 @@ try {
     $stmtX->close();
   }
 
-  // ---------- Pago contado opcional ----------
+  // Pago contado opcional
   $registrarPago = ($_POST['registrar_pago'] ?? '0') === '1';
   if ($registrarPago && $condicion_pago === 'Contado') {
     $pago_monto  = isset($_POST['pago_monto']) ? (float)$_POST['pago_monto'] : 0.0;
@@ -260,7 +279,6 @@ try {
     if (!$stP->execute()) { throw new Exception('Insert pago: '.$stP->error); }
     $stP->close();
 
-    // Marcar compra como Pagada si el pago cubre el total (incluye cargos)
     if ($pago_monto >= $total) {
       $conn->query("UPDATE compras SET estatus='Pagada' WHERE id=".$id_compra);
     }
