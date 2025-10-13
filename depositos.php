@@ -64,7 +64,8 @@ $sqlPendientes = "
            ds.banco,
            ds.referencia,
            ds.estado,
-           ds.comprobante_archivo
+           ds.comprobante_archivo,
+           ds.observaciones
     FROM depositos_sucursal ds
     INNER JOIN cortes_caja cc ON cc.id = ds.id_corte
     INNER JOIN sucursales s ON s.id = ds.id_sucursal
@@ -81,7 +82,7 @@ $desde       = trim($_GET['desde'] ?? '');
 $hasta       = trim($_GET['hasta'] ?? '');
 $semana      = trim($_GET['semana'] ?? ''); // YYYY-Www
 
-// Semana → lunes a domingo
+// Semana ISO → lunes a domingo
 if ($semana && preg_match('/^(\d{4})-W(\d{2})$/', $semana, $m)) {
     $yr = (int)$m[1]; $wk = (int)$m[2];
     $dt = new DateTime();
@@ -102,7 +103,8 @@ $sqlHistorial = "
            ds.banco,
            ds.referencia,
            ds.estado,
-           ds.comprobante_archivo
+           ds.comprobante_archivo,
+           ds.observaciones
     FROM depositos_sucursal ds
     INNER JOIN cortes_caja cc ON cc.id = ds.id_corte
     INNER JOIN sucursales s ON s.id = ds.id_sucursal
@@ -192,10 +194,11 @@ $pendMonto = 0.0; foreach ($pendientes as $p) { $pendMonto += (float)$p['monto_d
       --muted:#64748b;
       --soft:#eef2ff;
     }
-    body{ background:
-      radial-gradient(1200px 400px at 120% -50%, rgba(13,110,253,.07), transparent),
-      radial-gradient(1000px 380px at -10% 120%, rgba(25,135,84,.06), transparent),
-      var(--bg1);
+    body{
+      background:
+        radial-gradient(1200px 400px at 120% -50%, rgba(13,110,253,.07), transparent),
+        radial-gradient(1000px 380px at -10% 120%, rgba(25,135,84,.06), transparent),
+        var(--bg1);
     }
     .page-title{font-weight:800; letter-spacing:.2px; color:var(--ink);}
     .card-elev{border:0; border-radius:1rem; box-shadow:0 10px 24px rgba(15,23,42,.06), 0 2px 6px rgba(15,23,42,.05);}
@@ -207,10 +210,23 @@ $pendMonto = 0.0; foreach ($pendientes as $p) { $pendMonto += (float)$p['monto_d
     .table thead th{ position:sticky; top:0; background:#0f172a; color:#fff; z-index:1;}
     .table-hover tbody tr:hover{ background: rgba(13,110,253,.06); }
     .table-xs td, .table-xs th{ padding:.45rem .6rem; font-size:.92rem; }
+    /* Centrar verticalmente todo el renglón */
+    .align-middle td, .align-middle th { vertical-align: middle !important; }
     .nav-tabs .nav-link{border:0; border-bottom:2px solid transparent;}
     .nav-tabs .nav-link.active{border-bottom-color:var(--brand); font-weight:700;}
     .sticky-actions{ position:sticky; bottom:0; background:#fff; padding:.5rem; border-top:1px solid #e5e7eb;}
     code{background:#f1f5f9; padding:.1rem .35rem; border-radius:.35rem;}
+
+    /* 🔧 Observaciones: evita que “se baje”. 
+       Usamos flex para centrar verticalmente y pre-line para respetar saltos. */
+    .table-xs td.obs{
+      display:flex;
+      align-items:center;         /* centra verticalmente el contenido */
+      white-space: pre-line;      /* respeta saltos de línea sin <br> */
+      line-height: 1.25;          /* mejora la legibilidad */
+      max-width: 360px; 
+      flex-wrap: wrap;            /* por si el texto es largo */
+    }
   </style>
 </head>
 <body>
@@ -266,7 +282,7 @@ $pendMonto = 0.0; foreach ($pendientes as $p) { $pendMonto += (float)$p['monto_d
     </div>
   </div>
 
-  <!-- EXPORTAR POR DÍA (MOVIDO AQUÍ, DEBAJO DE CARDS) -->
+  <!-- EXPORTAR POR DÍA -->
   <div class="card card-elev mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
       <div class="section-title mb-0"><i class="bi bi-download"></i> Exportar transacciones por día</div>
@@ -335,6 +351,7 @@ $pendMonto = 0.0; foreach ($pendientes as $p) { $pendMonto += (float)$p['monto_d
                     <th class="text-end">Monto</th>
                     <th>Banco</th>
                     <th>Referencia</th>
+                    <th>Observaciones</th>
                     <th>Comprobante</th>
                     <th class="text-center">Acciones</th>
                   </tr>
@@ -345,7 +362,7 @@ $pendMonto = 0.0; foreach ($pendientes as $p) { $pendMonto += (float)$p['monto_d
                 foreach ($pendientes as $p): 
                   if ($lastCorte !== $p['id_corte']): ?>
                     <tr class="table-secondary">
-                      <td colspan="9" class="fw-semibold">
+                      <td colspan="10" class="fw-semibold">
                         <i class="bi bi-journal-check me-1"></i>Corte #<?= (int)$p['id_corte'] ?> · 
                         <span class="text-primary"><?= htmlspecialchars($p['sucursal']) ?></span>
                         <span class="ms-2 text-muted">Fecha: <?= htmlspecialchars($p['fecha_corte']) ?></span>
@@ -361,6 +378,13 @@ $pendMonto = 0.0; foreach ($pendientes as $p) { $pendMonto += (float)$p['monto_d
                     <td class="text-end">$<?= number_format($p['monto_depositado'],2) ?></td>
                     <td><?= htmlspecialchars($p['banco']) ?></td>
                     <td><code><?= htmlspecialchars($p['referencia']) ?></code></td>
+                    <td class="obs">
+                      <?php
+                        $obs = trim((string)($p['observaciones'] ?? ''));
+                        echo $obs !== '' ? htmlspecialchars($obs, ENT_QUOTES, 'UTF-8')
+                                         : '<span class="text-muted">—</span>';
+                      ?>
+                    </td>
                     <td>
                       <?php if (!empty($p['comprobante_archivo'])): ?>
                         <button class="btn btn-outline-primary btn-sm js-ver" 
@@ -438,13 +462,14 @@ $pendMonto = 0.0; foreach ($pendientes as $p) { $pendMonto += (float)$p['monto_d
                   <th class="text-end">Monto</th>
                   <th>Banco</th>
                   <th>Referencia</th>
+                  <th>Observaciones</th>
                   <th>Comprobante</th>
                   <th>Estado</th>
                 </tr>
               </thead>
               <tbody>
                 <?php if (!$historial): ?>
-                  <tr><td colspan="10" class="text-muted">Sin resultados con los filtros actuales.</td></tr>
+                  <tr><td colspan="11" class="text-muted">Sin resultados con los filtros actuales.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($historial as $h): ?>
                   <tr class="<?= $h['estado']=='Validado'?'table-success':'' ?>">
@@ -456,6 +481,13 @@ $pendMonto = 0.0; foreach ($pendientes as $p) { $pendMonto += (float)$p['monto_d
                     <td class="text-end">$<?= number_format($h['monto_depositado'],2) ?></td>
                     <td><?= htmlspecialchars($h['banco']) ?></td>
                     <td><code><?= htmlspecialchars($h['referencia']) ?></code></td>
+                    <td class="obs">
+                      <?php
+                        $obsH = trim((string)($h['observaciones'] ?? ''));
+                        echo $obsH !== '' ? htmlspecialchars($obsH, ENT_QUOTES, 'UTF-8')
+                                          : '<span class="text-muted">—</span>';
+                      ?>
+                    </td>
                     <td>
                       <?php if (!empty($h['comprobante_archivo'])): ?>
                         <button class="btn btn-outline-primary btn-sm js-ver" 
