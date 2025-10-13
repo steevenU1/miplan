@@ -18,25 +18,28 @@ function obtenerSemanaPorIndice(int $offset = 0) {
 }
 $semIdx = isset($_GET['semana']) ? (int)$_GET['semana'] : 0;
 list($iniObj,$finObj) = obtenerSemanaPorIndice($semIdx);
-$ini = $iniObj->format('Y-m-d 00:00:00'); $fin = $finObj->format('Y-m-d 23:59:59');
-$iniISO = $iniObj->format('Y-m-d');        $finISO = $finObj->format('Y-m-d');
+$ini    = $iniObj->format('Y-m-d 00:00:00');
+$fin    = $finObj->format('Y-m-d 23:59:59');
+$iniISO = $iniObj->format('Y-m-d');
+$finISO = $finObj->format('Y-m-d');
 
 /* ===== CSV ===== */
 $filename = "nomina_semana_{$iniISO}_{$finISO}.csv";
 header('Content-Type: text/csv; charset=utf-8');
 header('Content-Disposition: attachment; filename="'.$filename.'"');
 $out = fopen('php://output','w');
-fwrite($out, "\xEF\xBB\xBF");
+fwrite($out, "\xEF\xBB\xBF"); // BOM UTF-8
 
 fputcsv($out, ['REPORTE DE NÓMINA SEMANAL']);
 fputcsv($out, ['Semana', $iniObj->format('d/m/Y').' - '.$finObj->format('d/m/Y')]);
 fputcsv($out, []);
 
-/* ===== Encabezados (igual que el reporte) ===== */
+/* ===== Encabezados ===== */
 $hdr = [
   'Empleado','Rol','Sucursal',
-  'Sueldo','Eq.','SIMs','Pos.','PosG.','DirG.','Esc.Eq.','PrepG.',
-  'Desc.','Neto',
+  'Sueldo Base','B. Gerente','B. Cordón',
+  'Eq.','SIMs','Pos.','PosG.','DirG.','Esc.Eq.','PrepG.',
+  'Desc.','Ajuste Neto ±','Neto',
   'Override ID','Override Origen'
 ];
 fputcsv($out, $hdr);
@@ -71,7 +74,8 @@ $sqlU="SELECT u.id,u.nombre,u.rol,u.sueldo,s.nombre sucursal,u.id_sucursal
 $rsU=$conn->query($sqlU);
 
 /* ===== Queries (sumas) ===== */
-// Equipos (solo comisión)
+/* Nota: mantenemos tus agregaciones originales para consistencia
+   con reportes existentes. */
 $stEq = $conn->prepare("
   SELECT SUM(dv.comision_regular + dv.comision_especial) com_tot
   FROM detalle_venta dv
@@ -80,27 +84,24 @@ $stEq = $conn->prepare("
   WHERE v.id_usuario=? AND v.fecha_venta BETWEEN ? AND ?
     AND LOWER(p.tipo_producto) NOT IN ('sim','chip','pospago')
 ");
-// SIMs (prepago) comisión
 $stSims = $conn->prepare("
   SELECT SUM(vs.comision_ejecutivo) com_tot
   FROM ventas_sims vs
   WHERE vs.id_usuario=? AND vs.fecha_venta BETWEEN ? AND ?
     AND vs.tipo_venta IN ('Nueva','Portabilidad')
 ");
-// Pospago comisión
 $stPos = $conn->prepare("
   SELECT SUM(vs.comision_ejecutivo) com_tot
   FROM ventas_sims vs
   WHERE vs.id_usuario=? AND vs.fecha_venta BETWEEN ? AND ?
     AND vs.tipo_venta='Pospago'
 ");
-// Gerente – ventas (equipos/mifi/modem)
+/* Gerente – totales por sucursal: dejamos tu criterio */
 $stGerVentas = $conn->prepare("
   SELECT IFNULL(SUM(v.comision_gerente),0) tot
   FROM ventas v
   WHERE v.id_sucursal=? AND v.fecha_venta BETWEEN ? AND ?
 ");
-// Gerente – SIMs (prepago/pospago)
 $stGerSims = $conn->prepare("
   SELECT IFNULL(SUM(vs.comision_gerente),0) tot
   FROM ventas_sims vs
@@ -111,11 +112,17 @@ while($u=$rsU->fetch_assoc()){
   $idU=(int)$u['id']; $idSuc=(int)$u['id_sucursal']; $rol=$u['rol'];
   $ov = fetch_override_exact($conn,$idU,$iniISO,$finISO);
 
-  // Sueldo
+  /* Sueldo Base */
   $sueldo = (isset($ov['sueldo_override']) && $ov['sueldo_override']!==null)
               ? (float)$ov['sueldo_override'] : (float)$u['sueldo'];
 
-  // Comisiones Ejecutivo
+  /* 🔹 Bonos (solo vía override; por defecto 0.00) */
+  $bonoGer = (isset($ov['bono_gerente_override']) && $ov['bono_gerente_override']!==null)
+              ? (float)$ov['bono_gerente_override'] : 0.00;
+  $bonoCor = (isset($ov['bono_cordon_override']) && $ov['bono_cordon_override']!==null)
+              ? (float)$ov['bono_cordon_override'] : 0.00;
+
+  /* Comisiones Ejecutivo */
   $eq = 0.0; $sim = 0.0; $pos = 0.0;
   if($rol!=='Gerente'){
     $stEq->bind_param('iss',$idU,$ini,$fin);   $stEq->execute();
@@ -131,10 +138,10 @@ while($u=$rsU->fetch_assoc()){
     $pos = (isset($ov['pospago_override']) && $ov['pospago_override']!==null) ? (float)$ov['pospago_override'] : $pos_real;
   }
 
-  // Partes de Gerente
+  /* Partes de Gerente */
   $posg=0.0; $dirg=0.0; $esceq=0.0; $prepg=0.0; $baseg=0.0;
   if($rol==='Gerente'){
-    // reales (sucursal)
+    // reales por sucursal
     $stGerVentas->bind_param('iss',$idSuc,$ini,$fin); $stGerVentas->execute();
     $esceq_real=(float)($stGerVentas->get_result()->fetch_assoc()['tot'] ?? 0);
     $stGerSims->bind_param('iss',$idSuc,$ini,$fin);   $stGerSims->execute();
@@ -148,18 +155,23 @@ while($u=$rsU->fetch_assoc()){
     $baseg = (isset($ov['ger_base_override']) && $ov['ger_base_override'] !== null) ? (float)$ov['ger_base_override'] : 0.0;
   }
 
-  // Descuentos y Neto (mantenemos la misma lógica del reporte)
-  $desc = sum_descuentos($conn,$idU,$iniISO,$finISO);
-  $neto = $sueldo + $eq + $sim + $pos + $posg + $dirg + $esceq + $prepg + $baseg - $desc;
+  /* Descuentos y Ajuste */
+  $desc   = sum_descuentos($conn,$idU,$iniISO,$finISO);
+  $ajuste = (float)($ov['ajuste_neto_extra'] ?? 0.00);
 
-  // Auditoría
-  $ovId = $ov['id'] ?? '—';
+  /* Neto con bonos y ajuste */
+  $neto = $sueldo + $bonoGer + $bonoCor + $eq + $sim + $pos + $posg + $dirg + $esceq + $prepg + $baseg - $desc + $ajuste;
+
+  /* Auditoría */
+  $ovId  = $ov['id'] ?? '—';
   $ovSrc = ($ovId==='—') ? '—' : trim(($ov['fuente'] ?? '').' '.($ov['estado'] ?? ''));
 
-  // Fila (sin columnas de unidades)
+  /* Fila */
   fputcsv($out, [
     $u['nombre'], $rol, $u['sucursal'],
     number_format($sueldo,2,'.',''),
+    number_format($bonoGer,2,'.',''),
+    number_format($bonoCor,2,'.',''),
     number_format($eq,2,'.',''),
     number_format($sim,2,'.',''),
     number_format($pos,2,'.',''),
@@ -168,6 +180,7 @@ while($u=$rsU->fetch_assoc()){
     number_format($esceq,2,'.',''),
     number_format($prepg,2,'.',''),
     number_format($desc,2,'.',''),
+    number_format($ajuste,2,'.',''),
     number_format($neto,2,'.',''),
     $ovId, $ovSrc
   ]);

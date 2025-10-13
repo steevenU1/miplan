@@ -23,7 +23,6 @@ include 'db.php';
 include 'navbar.php';
 include 'helpers_nomina.php';
 
-
 /* ========================
    Semanas (mar→lun)
 ======================== */
@@ -147,7 +146,7 @@ while ($u = $resUsuarios->fetch_assoc()) {
         $stmt->close();
     }
 
-    // Desglose GERENTE
+    // Desglose GERENTE (variables de cálculo)
     $com_ger_dir  = 0.0;
     $com_ger_esc  = 0.0;
     $com_ger_prep = 0.0;
@@ -204,7 +203,7 @@ while ($u = $resUsuarios->fetch_assoc()) {
     // Descuentos
     $descuentos = obtenerDescuentosSemana($conn, $id_usuario, $inicioSemanaObj, $finSemanaObj);
 
-    // Overrides por semana
+    // Overrides por semana (trae todas las columnas existentes en la tabla, incl. las nuevas)
     $ov = fetchOverridesSemana($conn, $id_usuario, $iniISO, $finISO) ?? [];
 
     if ($u['rol'] != 'Gerente') {
@@ -214,7 +213,7 @@ while ($u = $resUsuarios->fetch_assoc()) {
       $ov['ger_pos_override']  = null;
     }
 
-    // Copias originales
+    // Copias originales (para referencia)
     $orig_sueldo   = (float)$u['sueldo'];
     $orig_equipos  = $com_equipos;
     $orig_sims     = $com_sims;
@@ -229,7 +228,7 @@ while ($u = $resUsuarios->fetch_assoc()) {
     $ger_base_legacy = $ov['ger_base_override'] ?? null;
     $usar_legacy = isset($ger_base_legacy) && !isset($ov['ger_dir_override']) && !isset($ov['ger_esc_override']) && !isset($ov['ger_prep_override']);
 
-    // Aplicar overrides
+    // Aplicar overrides a cálculos existentes
     $sueldo_forzado = applyOverride($ov['sueldo_override']     ?? null, $orig_sueldo);
     $com_equipos    = applyOverride($ov['equipos_override']    ?? null, $orig_equipos);
     $com_sims       = applyOverride($ov['sims_override']       ?? null, $orig_sims);
@@ -253,12 +252,17 @@ while ($u = $resUsuarios->fetch_assoc()) {
     $com_ger_pos  = applyOverride($ov['ger_pos_override']  ?? null, $orig_ger_pos);
     $descuentos   = applyOverride($ov['descuentos_override'] ?? null, $orig_desc);
 
+    // === Nuevos bonos editables ===
+    $bono_gerente = applyOverride($ov['bono_gerente_override'] ?? null, 0.00);
+    $bono_cordon  = applyOverride($ov['bono_cordon_override']  ?? null, 0.00);
+
     $ajuste_neto_extra = (float)($ov['ajuste_neto_extra'] ?? 0.00);
     $estado_override   = $ov['estado'] ?? null;
     $nota_override     = $ov['nota']   ?? null;
 
-    // Totales
-    $total_bruto = $sueldo_forzado + $com_equipos + $com_sims + $com_pospago
+    // Totales (ahora incluyen los bonos)
+    $total_bruto = $sueldo_forzado + $bono_gerente + $bono_cordon
+                 + $com_equipos + $com_sims + $com_pospago
                  + $com_ger_dir + $com_ger_esc + $com_ger_prep + $com_ger_pos;
     $total_neto  = $total_bruto - $descuentos + $ajuste_neto_extra;
 
@@ -268,7 +272,7 @@ while ($u = $resUsuarios->fetch_assoc()) {
     $confirmado_en = $confRow['confirmado_en'] ?? null;
     $comentario = $confRow['comentario'] ?? '';
 
-    // Flags
+    // Flags (dejamos por si se usan en JS, pero ya no mostramos “forzado” en UI)
     $flag_forz = [
       'sueldo'     => isset($ov['sueldo_override']),
       'equipos'    => isset($ov['equipos_override']),
@@ -279,6 +283,8 @@ while ($u = $resUsuarios->fetch_assoc()) {
       'ger_prep'   => isset($ov['ger_prep_override'])|| $usar_legacy,
       'ger_pos'    => isset($ov['ger_pos_override']),
       'descuentos' => isset($ov['descuentos_override']),
+      'b_gerente'  => isset($ov['bono_gerente_override']),
+      'b_cordon'   => isset($ov['bono_cordon_override']),
       'ajuste'     => abs($ajuste_neto_extra) > 0.0001,
       'estado'     => $estado_override,
       'nota'       => $nota_override
@@ -291,6 +297,8 @@ while ($u = $resUsuarios->fetch_assoc()) {
         'rol'            => $u['rol'],
         'sucursal'       => $u['sucursal'],
         'sueldo'         => $sueldo_forzado,
+        'b_gerente'      => $bono_gerente,
+        'b_cordon'       => $bono_cordon,
         'com_equipos'    => $com_equipos,
         'com_sims'       => $com_sims,
         'com_pospago'    => $com_pospago,
@@ -438,7 +446,9 @@ $pendientes = max($empleados - $confirmados, 0);
             <th>Empleado</th>
             <th class="th-sort" data-key="rol">Rol</th>
             <th class="th-sort" data-key="sucursal">Sucursal</th>
-            <th class="th-sort num" data-key="sueldo">Sueldo</th>
+            <th class="th-sort num" data-key="sueldo">Sueldo Base</th>
+            <th class="th-sort num" data-key="b_gerente">B. Gerente</th>
+            <th class="th-sort num" data-key="b_cordon">B. Cordón</th>
             <th class="th-sort num" data-key="equipos">Eq.</th>
             <th class="th-sort num" data-key="sims">SIMs</th>
             <th class="th-sort num" data-key="pospago">Pos.</th>
@@ -460,21 +470,26 @@ $pendientes = max($empleados - $confirmados, 0);
               $valGerDir  = $isGer ? (float)$n['com_ger_dir']  : 0.0;
               $valGerEsc  = $isGer ? (float)$n['com_ger_esc']  : 0.0;
               $valGerPrep = $isGer ? (float)$n['com_ger_prep'] : 0.0;
-              $ff = $n['_forz_flags'] ?? [];
               $ov = $n['_ov'] ?? [];
           ?>
           <tr
             data-id="<?= (int)$n['id_usuario'] ?>"
             data-rol="<?= htmlspecialchars($n['rol'], ENT_QUOTES, 'UTF-8') ?>"
             data-sucursal="<?= htmlspecialchars($n['sucursal'], ENT_QUOTES, 'UTF-8') ?>"
+
             data-sueldo="<?= (float)$n['sueldo'] ?>"
+            data-b_gerente="<?= (float)$n['b_gerente'] ?>"
+            data-b_cordon="<?= (float)$n['b_cordon'] ?>"
+
             data-equipos="<?= (float)$n['com_equipos'] ?>"
             data-sims="<?= (float)$n['com_sims'] ?>"
             data-pospago="<?= (float)$n['com_pospago'] ?>"
+
             data-posg="<?= $valPosG ?>"
             data-ger_dir="<?= $valGerDir ?>"
             data-ger_esc="<?= $valGerEsc ?>"
             data-ger_prep="<?= $valGerPrep ?>"
+
             data-descuentos="<?= (float)$n['descuentos'] ?>"
             data-neto="<?= (float)$n['total_neto'] ?>"
             data-confirmado="<?= $isOk ? 1 : 0 ?>"
@@ -488,6 +503,9 @@ $pendientes = max($empleados - $confirmados, 0);
             data-ov-esc="<?= isset($ov['ger_esc_override'])        ? htmlspecialchars($ov['ger_esc_override'])    : '' ?>"
             data-ov-prep="<?= isset($ov['ger_prep_override'])      ? htmlspecialchars($ov['ger_prep_override'])   : '' ?>"
             data-ov-posg="<?= isset($ov['ger_pos_override'])       ? htmlspecialchars($ov['ger_pos_override'])    : '' ?>"
+
+            data-ov-bger="<?= isset($ov['bono_gerente_override'])  ? htmlspecialchars($ov['bono_gerente_override']): '' ?>"
+            data-ov-bcor="<?= isset($ov['bono_cordon_override'])   ? htmlspecialchars($ov['bono_cordon_override']) : '' ?>"
 
             data-ov-desc="<?= isset($ov['descuentos_override'])    ? htmlspecialchars($ov['descuentos_override']) : '' ?>"
             data-ov-ajuste="<?= isset($n['_ajuste_extra'])         ? htmlspecialchars($n['_ajuste_extra'])        : '0' ?>"
@@ -513,20 +531,23 @@ $pendientes = max($empleados - $confirmados, 0);
             <td><span class="badge-role rounded-pill"><?= htmlspecialchars($n['rol'], ENT_QUOTES, 'UTF-8') ?></span></td>
             <td><span class="badge-suc rounded-pill"><?= htmlspecialchars($n['sucursal'], ENT_QUOTES, 'UTF-8') ?></span></td>
 
-            <td class="num">$<?= number_format($n['sueldo'],2) ?><?php if (!empty($ff['sueldo'])): ?><span class="chip chip-warn ms-1">forzado</span><?php endif; ?></td>
-            <td class="num">$<?= number_format($n['com_equipos'],2) ?><?php if (!empty($ff['equipos'])): ?><span class="chip chip-warn ms-1">forzado</span><?php endif; ?></td>
-            <td class="num">$<?= number_format($n['com_sims'],2) ?><?php if (!empty($ff['sims'])): ?><span class="chip chip-warn ms-1">forzado</span><?php endif; ?></td>
-            <td class="num">$<?= number_format($n['com_pospago'],2) ?><?php if (!empty($ff['pospago'])): ?><span class="chip chip-warn ms-1">forzado</span><?php endif; ?></td>
+            <td class="num">$<?= number_format($n['sueldo'],2) ?></td>
+            <td class="num">$<?= number_format($n['b_gerente'],2) ?></td>
+            <td class="num">$<?= number_format($n['b_cordon'],2) ?></td>
 
-            <td class="num">$<?= number_format($valPosG,2) ?><?php if (!empty($ff['ger_pos'])): ?><span class="chip chip-warn ms-1">forzado</span><?php endif; ?></td>
-            <td class="num">$<?= number_format($valGerDir,2) ?><?php if (!empty($ff['ger_dir'])): ?><span class="chip chip-warn ms-1">forzado</span><?php endif; ?></td>
-            <td class="num">$<?= number_format($valGerEsc,2) ?><?php if (!empty($ff['ger_esc'])): ?><span class="chip chip-warn ms-1">forzado</span><?php endif; ?></td>
-            <td class="num">$<?= number_format($valGerPrep,2) ?><?php if (!empty($ff['ger_prep'])): ?><span class="chip chip-warn ms-1">forzado</span><?php endif; ?></td>
+            <td class="num">$<?= number_format($n['com_equipos'],2) ?></td>
+            <td class="num">$<?= number_format($n['com_sims'],2) ?></td>
+            <td class="num">$<?= number_format($n['com_pospago'],2) ?></td>
 
-            <td class="num text-danger">-$<?= number_format($n['descuentos'],2) ?><?php if (!empty($ff['descuentos'])): ?><span class="chip chip-warn ms-1">forzado</span><?php endif; ?></td>
+            <td class="num">$<?= number_format($valPosG,2) ?></td>
+            <td class="num">$<?= number_format($valGerDir,2) ?></td>
+            <td class="num">$<?= number_format($valGerEsc,2) ?></td>
+            <td class="num">$<?= number_format($valGerPrep,2) ?></td>
+
+            <td class="num text-danger">-$<?= number_format($n['descuentos'],2) ?></td>
             <td class="num fw-semibold">
               $<?= number_format($n['total_neto'],2) ?>
-              <?php if (!empty($ff['ajuste'])): ?>
+              <?php if (!empty($n['_ajuste_extra'])): ?>
                 <span class="chip chip-note ms-1" title="Ajuste neto extra"><?= $n['_ajuste_extra']>=0?'+':'' ?>$<?= number_format($n['_ajuste_extra'],2) ?></span>
               <?php endif; ?>
             </td>
@@ -551,7 +572,7 @@ $pendientes = max($empleados - $confirmados, 0);
         </tbody>
         <tfoot class="table-light">
           <tr>
-            <td colspan="11" class="text-end"><strong>Totales</strong></td>
+            <td colspan="13" class="text-end"><strong>Totales</strong></td>
             <td class="num text-danger"><strong>-$<?= number_format($totalGlobalDesc,2) ?></strong></td>
             <td class="num"><strong>$<?= number_format($totalGlobalNeto,2) ?></strong></td>
             <td class="text-start">
@@ -567,7 +588,7 @@ $pendientes = max($empleados - $confirmados, 0);
 
   <div class="mt-2 text-muted small">
     * Para gerentes: se muestran <strong>DirG.</strong>, <strong>Esc.Eq.</strong>, <strong>PrepG.</strong> y <strong>PosG.</strong><br>
-    * Totales netos = sueldo + comisiones – descuentos ± ajustes de RH.
+    * Totales netos = sueldo base + bonos + comisiones – descuentos ± ajustes de RH.
   </div>
 </div>
 
@@ -589,13 +610,22 @@ $pendientes = max($empleados - $confirmados, 0);
           <div class="col-12 small text-muted" id="ov_nombre_sucursal"></div>
 
           <div class="col-6 col-md-3">
-            <label class="form-label small">Sueldo</label>
+            <label class="form-label small">Sueldo Base</label>
             <input class="form-control form-control-sm text-end" name="sueldo_override" id="ov_sueldo" placeholder="(cálculo)">
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label small">B. Gerente</label>
+            <input class="form-control form-control-sm text-end" name="bono_gerente_override" id="ov_bger">
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label small">B. Cordón</label>
+            <input class="form-control form-control-sm text-end" name="bono_cordon_override" id="ov_bcor">
           </div>
           <div class="col-6 col-md-3">
             <label class="form-label small">Eq.</label>
             <input class="form-control form-control-sm text-end" name="equipos_override" id="ov_equipos">
           </div>
+
           <div class="col-6 col-md-3">
             <label class="form-label small">SIMs</label>
             <input class="form-control form-control-sm text-end" name="sims_override" id="ov_sims">
@@ -721,9 +751,11 @@ $pendientes = max($empleados - $confirmados, 0);
       document.getElementById('ov_rol').value = rol;
 
       setVal('ov_sueldo', tr.dataset.ovSueldo);
-      setVal('ov_equipos', tr.dataset.ovEquipos);
-      setVal('ov_sims', tr.dataset.ovSims);
-      setVal('ov_pos', tr.dataset.ovPos);
+      setVal('ov_bger',   tr.dataset.ovBger);
+      setVal('ov_bcor',   tr.dataset.ovBcor);
+      setVal('ov_equipos',tr.dataset.ovEquipos);
+      setVal('ov_sims',   tr.dataset.ovSims);
+      setVal('ov_pos',    tr.dataset.ovPos);
 
       setVal('ov_dir',  tr.dataset.ovDir);
       setVal('ov_esc',  tr.dataset.ovEsc);

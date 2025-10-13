@@ -17,12 +17,10 @@ function clean_num(?string $v, ?float $defaultIfEmpty = null): ?float {
     if ($v === null) return $defaultIfEmpty;
     $v = trim($v);
     if ($v === '') return $defaultIfEmpty;
-    // quitar $ , espacios y separadores de miles
-    $v = str_replace(['$', ',', ' '], '', $v);
-    // cambiar coma decimal por punto si vino así
-    $v = str_replace([' '], '', $v); // NBSP
+    // quitar símbolos y separadores de miles
+    $v = str_replace(['$', ',', ' ', "\xc2\xa0"], '', $v); // incluye NBSP
+    // estandarizar decimal
     $v = str_replace([';'], '.', $v);
-    $v = str_replace(['.'], '.', $v);
     if ($v === '' || !is_numeric($v)) return $defaultIfEmpty;
     return floatval($v);
 }
@@ -39,8 +37,8 @@ function clean_date(?string $d): ?string {
 }
 
 try {
-    $idUsuario = isset($_POST['id_usuario']) ? (int)$_POST['id_usuario'] : 0;
-    $rolEmpleado = $_POST['rol'] ?? '';
+    $idUsuario    = isset($_POST['id_usuario']) ? (int)$_POST['id_usuario'] : 0;
+    $rolEmpleado  = $_POST['rol'] ?? '';
     $semanaInicio = clean_date($_POST['semana_inicio'] ?? null);
     $semanaFin    = clean_date($_POST['semana_fin'] ?? null);
 
@@ -49,27 +47,29 @@ try {
     }
 
     // Overrides comunes
-    $sueldo     = clean_num($_POST['sueldo_override']     ?? null, null);
-    $equipos    = clean_num($_POST['equipos_override']    ?? null, null);
-    $sims       = clean_num($_POST['sims_override']       ?? null, null);
-    $pos        = clean_num($_POST['pospago_override']    ?? null, null);
+    $sueldo  = clean_num($_POST['sueldo_override']  ?? null, null);
+    $equipos = clean_num($_POST['equipos_override'] ?? null, null);
+    $sims    = clean_num($_POST['sims_override']    ?? null, null);
+    $pos     = clean_num($_POST['pospago_override'] ?? null, null);
 
-    // Overrides gerente
+    // Overrides gerente (solo aplican si rol = Gerente)
     $dirg  = clean_num($_POST['ger_dir_override']  ?? null, null);
     $esceq = clean_num($_POST['ger_esc_override']  ?? null, null);
     $prepg = clean_num($_POST['ger_prep_override'] ?? null, null);
     $posg  = clean_num($_POST['ger_pos_override']  ?? null, null);
-
-    // Si NO es gerente, ignorar (guardar NULL)
     if ($rolEmpleado !== 'Gerente') {
-        $dirg = $esceq = $prepg = $posg = null;
+        $dirg = $esceq = $prepg = $posg = null; // ignorar en no-gerentes
     }
 
-    $desc      = clean_num($_POST['descuentos_override'] ?? null, null);
-    $ajuste    = clean_num($_POST['ajuste_neto_extra']    ?? null, 0.00); // nunca nulo
+    // 🔹 Nuevos bonos editables
+    $bonoGer = clean_num($_POST['bono_gerente_override'] ?? null, null);
+    $bonoCor = clean_num($_POST['bono_cordon_override']  ?? null, null);
 
-    $estado    = $_POST['estado'] ?? 'borrador';
-    $nota      = clean_str($_POST['nota'] ?? null);
+    // Descuentos / ajuste / estado / nota
+    $desc   = clean_num($_POST['descuentos_override'] ?? null, null);
+    $ajuste = clean_num($_POST['ajuste_neto_extra']    ?? null, 0.00); // nunca nulo
+    $estado = $_POST['estado'] ?? 'borrador';
+    $nota   = clean_str($_POST['nota'] ?? null);
 
     // Normalizar estado
     $validEstados = ['borrador','por_autorizar','autorizado'];
@@ -90,7 +90,7 @@ try {
     $stmt->close();
 
     if ($row) {
-        // UPDATE existente
+        // UPDATE existente (ahora incluye los 2 bonos)
         $sql = "UPDATE nomina_overrides_semana SET
                     sueldo_override=?,
                     equipos_override=?,
@@ -102,15 +102,17 @@ try {
                     ger_pos_override=?,
                     descuentos_override=?,
                     ajuste_neto_extra=?,
+                    bono_gerente_override=?,
+                    bono_cordon_override=?,
                     fuente=?,
                     estado=?,
                     nota=?,
                     actualizado_en=CURRENT_TIMESTAMP
                 WHERE id_usuario=? AND semana_inicio=? AND semana_fin=?";
         $stmt = $conn->prepare($sql);
-        // 10 decimales + 3 strings + id + 2 fechas
+        // 12 números (d) + 3 strings (s) + id (i) + 2 fechas (s,s)
         $stmt->bind_param(
-            "ddddddddddsssiss",
+            "ddddddddddddsssiss",
             $sueldo,
             $equipos,
             $sims,
@@ -121,6 +123,8 @@ try {
             $posg,
             $desc,
             $ajuste,
+            $bonoGer,
+            $bonoCor,
             $fuente,
             $estado,
             $nota,
@@ -131,17 +135,19 @@ try {
         $stmt->execute();
         $stmt->close();
     } else {
-        // INSERT nuevo (no especificamos creado_en/actualizado_en: la tabla los pone por defecto)
+        // INSERT nuevo (incluye los 2 bonos)
         $sql = "INSERT INTO nomina_overrides_semana
                    (id_usuario, semana_inicio, semana_fin,
                     sueldo_override, equipos_override, sims_override, pospago_override,
                     ger_dir_override, ger_esc_override, ger_prep_override, ger_pos_override,
-                    descuentos_override, ajuste_neto_extra, fuente, estado, nota)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+                    descuentos_override, ajuste_neto_extra,
+                    bono_gerente_override, bono_cordon_override,
+                    fuente, estado, nota)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
         $stmt = $conn->prepare($sql);
-        // tipos: i, s, s, (10 d), s, s, s  => 'iss' + 'dddddddddd' + 'sss'
+        // tipos: 'iss' + 12 'd' + 'sss'
         $stmt->bind_param(
-            "issddddddddddsss",
+            "issddddddddddddsss",
             $idUsuario,
             $semanaInicio,
             $semanaFin,
@@ -155,6 +161,8 @@ try {
             $posg,
             $desc,
             $ajuste,
+            $bonoGer,
+            $bonoCor,
             $fuente,
             $estado,
             $nota

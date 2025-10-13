@@ -188,6 +188,11 @@ $stmt->execute();
 $ov = $stmt->get_result()->fetch_assoc() ?: [];
 
 $sueldo   = applyOverride($ov['sueldo_override']   ?? null, $sueldo_calc);
+
+/** 🔹 Nuevos bonos (si no hay override, quedan en 0.00) */
+$bono_gerente = applyOverride($ov['bono_gerente_override'] ?? null, 0.00);
+$bono_cordon  = applyOverride($ov['bono_cordon_override']  ?? null, 0.00);
+
 $equipos  = applyOverride($ov['equipos_override']  ?? null, $com_equipos_calc);
 $sims     = applyOverride($ov['sims_override']     ?? null, $com_sims_calc);
 $pos      = applyOverride($ov['pospago_override']  ?? null, $com_pos_calc);
@@ -203,10 +208,10 @@ $ovEstado = $ov['estado'] ?? null;
 $ovNota   = $ov['nota']   ?? null;
 
 /* ========================
-   Totales (con override)
+   Totales (con override + bonos)
 ======================== */
 $com_ger_total = $dirg + $esceq + $prepg + $posg;
-$bruto = $sueldo + $equipos + $sims + $pos + $com_ger_total;
+$bruto = $sueldo + $bono_gerente + $bono_cordon + $equipos + $sims + $pos + $com_ger_total;
 $neto  = $bruto - $desc + $ajuste;
 
 /* ========================
@@ -289,6 +294,16 @@ $puedeConfirmar = ($ahora >= $abreConfirm);
             <td class="text-end">$<?= number_format($sueldo,2) ?></td>
           </tr>
 
+          <!-- 🔹 Nuevos bonos -->
+          <tr>
+            <td>B. Gerente</td>
+            <td class="text-end">$<?= number_format($bono_gerente,2) ?></td>
+          </tr>
+          <tr>
+            <td>B. Cordón</td>
+            <td class="text-end">$<?= number_format($bono_cordon,2) ?></td>
+          </tr>
+
           <tr>
             <td>Comisiones Equipos</td>
             <td class="text-end">$<?= number_format($equipos,2) ?></td>
@@ -327,6 +342,13 @@ $puedeConfirmar = ($ahora >= $abreConfirm);
             <td>Descuentos</td>
             <td class="text-end">-$<?= number_format($desc,2) ?></td>
           </tr>
+
+          <?php if (abs($ajuste) > 0.0001): ?>
+            <tr class="<?= $ajuste>=0 ? 'table-success' : 'table-warning' ?>">
+              <td>Ajuste neto <?= $ajuste>=0 ? 'a favor' : 'en contra' ?></td>
+              <td class="text-end"><?= $ajuste>=0 ? '+' : '-' ?>$<?= number_format(abs($ajuste),2) ?></td>
+            </tr>
+          <?php endif; ?>
         </tbody>
         <tfoot class="table-light">
           <tr>

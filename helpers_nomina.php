@@ -3,7 +3,10 @@
    Helpers de overrides
 ======================== */
 
-/** Usa el override si viene numérico; si no, deja el original. */
+/**
+ * Usa el override si viene numérico; si no, respeta el valor original.
+ * Acepta 0.00 como override válido.
+ */
 function applyOverride($override, float $original): float {
     if ($override === null) return $original;
     if ($override === '')   return $original;
@@ -11,28 +14,66 @@ function applyOverride($override, float $original): float {
     return (float)$override;
 }
 
-/** Obtiene el registro de overrides de la semana (o array vacío). */
+/**
+ * Obtiene el registro de overrides de la semana.
+ * Incluye:
+ *  - sueldo/equipos/sims/pospago
+ *  - componentes de gerente (dir/esc/prep/pos) y ger_base_override (legacy)
+ *  - descuentos y ajuste_neto_extra
+ *  - NUEVOS: bono_gerente_override, bono_cordon_override
+ *  - metadatos: estado, nota, fuente, creado_en, actualizado_en
+ *
+ * Devuelve array vacío si no hay registro.
+ */
 function fetchOverridesSemana(mysqli $conn, int $idUsuario, string $iniISO, string $finISO): array {
-    $sql = "SELECT 
-              sueldo_override, equipos_override, sims_override, pospago_override,
-              ger_dir_override, ger_esc_override, ger_prep_override, ger_pos_override,
-              ger_base_override,
-              descuentos_override, ajuste_neto_extra, estado, nota
-            FROM nomina_overrides_semana
-            WHERE id_usuario=? AND semana_inicio=? AND semana_fin=?
-            LIMIT 1";
+    $sql = "
+        SELECT
+            sueldo_override,
+            equipos_override,
+            sims_override,
+            pospago_override,
+
+            ger_dir_override,
+            ger_esc_override,
+            ger_prep_override,
+            ger_pos_override,
+            ger_base_override,
+
+            descuentos_override,
+            ajuste_neto_extra,
+
+            -- 🔹 nuevos bonos editables
+            bono_gerente_override,
+            bono_cordon_override,
+
+            -- metadatos útiles en UI
+            estado,
+            nota,
+            fuente,
+            creado_en,
+            actualizado_en
+        FROM nomina_overrides_semana
+        WHERE id_usuario = ? AND semana_inicio = ? AND semana_fin = ?
+        LIMIT 1
+    ";
     $st = $conn->prepare($sql);
     $st->bind_param("iss", $idUsuario, $iniISO, $finISO);
     $st->execute();
     $row = $st->get_result()->fetch_assoc();
+    $st->close();
+
     return $row ?: [];
 }
 
 /**
  * Devuelve los componentes del gerente aplicando overrides.
+ *
  * Si hay overrides en dir/esc/prep, se usan tal cual.
- * Si NO los hay pero existe ger_base_override, se reparte proporcionalmente.
+ * Si NO los hay pero existe ger_base_override, se reparte proporcionalmente
+ * entre (origDir, origEsc, origPrep). El último (prep) ajusta centavos.
  * Siempre respeta ger_pos_override si existe.
+ *
+ * @return array [$dir, $esc, $prep, $pos, $base] donde $base = dir+esc+prep
  */
 function computeGerenteConOverrides(
     float $origDir, float $origEsc, float $origPrep, float $origPos,
