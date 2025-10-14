@@ -46,7 +46,6 @@ function semana_martes_lunes($offset=0){
   $fin=(clone $ini)->modify('+6 days')->setTime(23,59,59);
   return [$ini->format('Y-m-d'),$fin->format('Y-m-d')];
 }
-/* ¿Existe columna? (para compatibilidad) */
 function hasColumn(mysqli $conn, string $table, string $column): bool {
   $t = $conn->real_escape_string($table);
   $c = $conn->real_escape_string($column);
@@ -63,6 +62,16 @@ $rol   = $_SESSION['rol'] ?? '';
 $idSuc = (int)($_SESSION['id_sucursal'] ?? 0);
 $idUsr = (int)($_SESSION['id_usuario'] ?? 0);
 
+$ROLES_CON_SUCURSAL_LIBRE = ['Admin','GerenteZona','Super'];
+$sucursalSel = 0;
+if (in_array($rol, $ROLES_CON_SUCURSAL_LIBRE, true)) {
+  $sucursalSel = (int)($_GET['sucursal'] ?? 0); // 0 = Todas
+} elseif ($rol === 'Gerente') {
+  $sucursalSel = $idSuc; // forzado
+} else {
+  $sucursalSel = 0; // Ejecutivo ignora (se filtra por usuario)
+}
+
 $semana = isset($_GET['semana']) ? (int)$_GET['semana'] : 0;
 list($fechaInicio, $fechaFin) = semana_martes_lunes($semana);
 
@@ -70,11 +79,37 @@ $where  = " WHERE DATE(v.fecha_venta) BETWEEN ? AND ? ";
 $params = [$fechaInicio,$fechaFin];
 $types  = "ss";
 
-if ($rol === 'Ejecutivo'){ $where.=" AND v.id_usuario = ? ";  $params[]=$idUsr; $types.="i"; }
-elseif ($rol === 'Gerente'){ $where.=" AND v.id_sucursal = ? "; $params[]=$idSuc; $types.="i"; }
+/* Rol: Ejecutivo => solo sus ventas */
+if ($rol === 'Ejecutivo'){
+  $where.=" AND v.id_usuario = ? ";
+  $params[]=$idUsr; $types.="i";
+}
 
-if (!empty($_GET['tipo_venta'])){ $where.=" AND v.tipo_venta = ? "; $params[]=(string)$_GET['tipo_venta']; $types.="s"; }
-if (!empty($_GET['usuario']))   { $where.=" AND v.id_usuario = ? "; $params[]=(int)$_GET['usuario'];     $types.="i"; }
+/* Rol: Gerente => forzar sucursal de sesión */
+if ($rol === 'Gerente' && $idSuc > 0){
+  $where.=" AND v.id_sucursal = ? ";
+  $params[]=$idSuc; $types.="i";
+}
+
+/* Roles con selector de sucursal (Admin/GerenteZona/Super) */
+if (in_array($rol, $ROLES_CON_SUCURSAL_LIBRE, true) && $sucursalSel > 0){
+  $where.=" AND v.id_sucursal = ? ";
+  $params[]=$sucursalSel; $types.="i";
+}
+
+/* Filtro adicional: tipo de venta */
+if (!empty($_GET['tipo_venta'])){
+  $where.=" AND v.tipo_venta = ? ";
+  $params[]=(string)$_GET['tipo_venta']; $types.="s";
+}
+
+/* Filtro adicional: usuario */
+if (!empty($_GET['usuario'])){
+  $where.=" AND v.id_usuario = ? ";
+  $params[]=(int)$_GET['usuario']; $types.="i";
+}
+
+/* Búsqueda */
 if (!empty($_GET['buscar'])) {
   $q = "%".$_GET['buscar']."%";
   $where .= " AND (v.nombre_cliente LIKE ? OR v.telefono_cliente LIKE ? OR v.tag LIKE ?
@@ -193,7 +228,7 @@ while ($r = $res->fetch_assoc()) {
   $imei = ($r['imei1']!==null && $r['imei1']!=='') ? '="'.e($r['imei1']).'"' : '';
 
   // Mostrar solo en PRIMERA fila por venta
-  $soloPrimera = ($r['rn'] == 1);
+  $soloPrimera = ((int)$r['rn'] === 1);
 
   $precioVenta = $soloPrimera ? e($r['precio_venta']) : '';
 
