@@ -206,13 +206,25 @@ $grpVentas     = [
   'venta_sim_prepago.php',
   'venta_sim_pospago.php',
   'payjoy_tc_nueva.php',
-  'nueva_venta_accesorio.php',      // ✅ nuevo
+  'nueva_venta_accesorio.php',
   'historial_ventas.php',
   'historial_ventas_sims.php',
   'historial_payjoy_tc.php',
-  'historial_ventas_accesorios.php' // ✅ nuevo
+  'historial_ventas_accesorios.php'
 ];
-$grpInventario = ['panel.php', 'inventario_subdistribuidor.php', 'inventario_global.php', 'inventario_resumen.php', 'inventario_general.php', 'inventario_retiros.php', 'generar_traspaso_zona.php', 'traspasos_pendientes_zona.php', 'inventario_sims_resumen.php'];
+$grpInventario = [
+  'panel.php',
+  'inventario_subdistribuidor.php',
+  'inventario_global.php',
+  'inventario_resumen.php',
+  'inventario_general.php',
+  'inventario_retiros.php',
+  'generar_traspaso_zona.php',
+  'traspasos_pendientes_zona.php',
+  'inventario_sims_resumen.php',
+  'retiro_sims.php'
+];
+
 $grpCompras    = ['compras_nueva.php', 'compras_resumen.php', 'modelos.php', 'proveedores.php', 'compras_ingreso.php'];
 $grpTraspasos  = ['generar_traspaso.php', 'generar_traspaso_sims.php', 'traspasos_sims_pendientes.php', 'traspasos_sims_salientes.php', 'traspasos_pendientes.php', 'traspasos_salientes.php', 'traspaso_nuevo.php'];
 $grpEfectivo   = ['cobros.php', 'cortes_caja.php', 'generar_corte.php', 'depositos_sucursal.php', 'depositos.php', 'recoleccion_comisiones.php'];
@@ -651,7 +663,9 @@ function item_active(string $f, string $c): string
               <li><a class="dropdown-item <?= item_active('nueva_venta_accesorio.php', $current) ?>" href="nueva_venta_accesorio.php">Venta accesorios</a></li>
               <li><a class="dropdown-item <?= item_active('historial_ventas_accesorios.php', $current) ?>" href="historial_ventas_accesorios.php">Historial ventas accesorios</a></li>
 
-              <li><hr class="dropdown-divider"></li>
+              <li>
+                <hr class="dropdown-divider">
+              </li>
               <li class="dropdown-header">Historiales</li>
               <li><a class="dropdown-item <?= item_active('historial_ventas.php', $current) ?>" href="historial_ventas.php">Historial de ventas</a></li>
               <li><a class="dropdown-item <?= item_active('historial_ventas_sims.php', $current) ?>" href="historial_ventas_sims.php">Historial ventas SIM</a></li>
@@ -689,6 +703,12 @@ function item_active(string $f, string $c): string
             <?php if ($rolUsuario === 'Logistica'): ?>
               <li><a class="dropdown-item <?= item_active('inventario_global.php', $current) ?>" href="inventario_global.php">Inventario global</a></li>
               <li><a class="dropdown-item <?= item_active('inventario_historico.php', $current) ?>" href="inventario_historico.php">Inventario histórico</a></li>
+
+              <!-- 🔻 NUEVO: visible para LOGISTICA -->
+              <li>
+                <hr class="dropdown-divider">
+              </li>
+              <li><a class="dropdown-item <?= item_active('retiro_sims.php', $current) ?>" href="retiro_sims.php">Retiro de SIMS</a></li>
             <?php else: ?>
               <?php if (in_array($rolUsuario, ['Ejecutivo', 'Gerente'])): ?>
                 <li><a class="dropdown-item <?= item_active('panel.php', $current) ?>" href="panel.php">Inventario sucursal</a></li>
@@ -732,6 +752,11 @@ function item_active(string $f, string $c): string
                 <li><a class="dropdown-item <?= item_active('inventario_resumen.php', $current) ?>" href="inventario_resumen.php">Resumen Global</a></li>
                 <li><a class="dropdown-item <?= item_active('inventario_general.php', $current) ?>" href="inventario_general.php">Inventario Almacén</a></li>
                 <li><a class="dropdown-item <?= item_active('inventario_retiros.php', $current) ?>" href="inventario_retiros.php">🛑 Retiros de Inventario</a></li>
+
+                <?php if ($rolUsuario === 'Admin'): ?>
+                  <!-- 🔻 NUEVO: visible SOLO para ADMIN -->
+                  <li><a class="dropdown-item <?= item_active('retiro_sims.php', $current) ?>" href="retiro_sims.php">Retiro de SIMS</a></li>
+                <?php endif; ?>
               <?php endif; ?>
             <?php endif; ?>
           </ul>
