@@ -53,6 +53,61 @@ function generarTemporal() {
   return $out;
 }
 
+// ====== Listados / filtros (GET) ======
+$busq = trim($_GET['q'] ?? '');
+$frol = $_GET['rol'] ?? '';
+$fsuc = intval($_GET['sucursal'] ?? 0);
+
+// Función común de consulta
+function cargarUsuarios($conn, $activo, $busq, $frol, $fsuc, $limitToSucursalId = null) {
+  $sql = "SELECT u.id, u.nombre, u.usuario, u.rol, u.id_sucursal, u.activo, s.nombre AS sucursal_nombre
+          FROM usuarios u
+          LEFT JOIN sucursales s ON s.id = u.id_sucursal
+          WHERE u.activo=?";
+  $params = [$activo]; $types = "i";
+  if ($busq !== '') { $sql .= " AND (u.nombre LIKE CONCAT('%',?,'%') OR u.usuario LIKE CONCAT('%',?,'%'))"; $params[]=$busq; $params[]=$busq; $types.="ss"; }
+  if ($frol !== '') { $sql .= " AND u.rol=?"; $params[]=$frol; $types.="s"; }
+  if ($fsuc > 0)    { $sql .= " AND u.id_sucursal=?"; $params[]=$fsuc; $types.="i"; }
+  if (!is_null($limitToSucursalId)) { $sql .= " AND u.id_sucursal=?"; $params[]=$limitToSucursalId; $types.="i"; }
+  $sql .= " ORDER BY s.nombre ASC, u.nombre ASC";
+  $stmt = $conn->prepare($sql);
+  $stmt->bind_param($types, ...$params);
+  $stmt->execute();
+  $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+  $stmt->close();
+  return $data;
+}
+
+// Limite por sucursal para Gerente (todo el archivo lo usa)
+$limitSucGerente = (!$permAdmin && $permGerente) ? $ID_SUCURSAL : null;
+
+// ====== Export CSV (GET) ======
+// Exporta solo activos, con filtros aplicados y respetando permisos
+if (isset($_GET['export']) && $_GET['export'] === 'activos') {
+  $rows = cargarUsuarios($conn, 1, $busq, $frol, $fsuc, $limitSucGerente);
+
+  // CSV amigable para Excel: UTF-8 con BOM
+  $filename = 'usuarios_activos_'.date('Ymd_His').'.csv';
+  header('Content-Type: text/csv; charset=UTF-8');
+  header('Content-Disposition: attachment; filename="'.$filename.'"');
+  echo "\xEF\xBB\xBF"; // BOM
+
+  $out = fopen('php://output', 'w');
+  // Encabezados
+  fputcsv($out, ['ID','Nombre','Usuario','Rol','Sucursal']);
+  foreach ($rows as $r) {
+    fputcsv($out, [
+      $r['id'],
+      $r['nombre'],
+      $r['usuario'],
+      $r['rol'],
+      $r['sucursal_nombre'] ?? '-'
+    ]);
+  }
+  fclose($out);
+  exit;
+}
+
 // ====== Acciones POST ======
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion'])) {
   if (!hash_equals($_SESSION['csrf'], $_POST['csrf'] ?? '')) {
@@ -187,31 +242,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion'])) {
   }
 }
 
-// ====== Listados ======
-$busq = trim($_GET['q'] ?? '');
-$frol = $_GET['rol'] ?? '';
-$fsuc = intval($_GET['sucursal'] ?? 0);
-
-function cargarUsuarios($conn, $activo, $busq, $frol, $fsuc, $limitToSucursalId = null) {
-  $sql = "SELECT u.id, u.nombre, u.usuario, u.rol, u.id_sucursal, u.activo, s.nombre AS sucursal_nombre
-          FROM usuarios u
-          LEFT JOIN sucursales s ON s.id = u.id_sucursal
-          WHERE u.activo=?";
-  $params = [$activo]; $types = "i";
-  if ($busq !== '') { $sql .= " AND (u.nombre LIKE CONCAT('%',?,'%') OR u.usuario LIKE CONCAT('%',?,'%'))"; $params[]=$busq; $params[]=$busq; $types.="ss"; }
-  if ($frol !== '') { $sql .= " AND u.rol=?"; $params[]=$frol; $types.="s"; }
-  if ($fsuc > 0)    { $sql .= " AND u.id_sucursal=?"; $params[]=$fsuc; $types.="i"; }
-  if (!is_null($limitToSucursalId)) { $sql .= " AND u.id_sucursal=?"; $params[]=$limitToSucursalId; $types.="i"; }
-  $sql .= " ORDER BY s.nombre ASC, u.nombre ASC";
-  $stmt = $conn->prepare($sql);
-  $stmt->bind_param($types, ...$params);
-  $stmt->execute();
-  $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-  $stmt->close();
-  return $data;
-}
-
-$limitSucGerente   = (!$permAdmin && $permGerente) ? $ID_SUCURSAL : null;
+// Carga listados para la vista
 $usuariosActivos   = cargarUsuarios($conn, 1, $busq, $frol, $fsuc, $limitSucGerente);
 $usuariosInactivos = cargarUsuarios($conn, 0, $busq, $frol, $fsuc, $limitSucGerente);
 
@@ -313,13 +344,12 @@ foreach ($usuariosActivos as $u) {
 
     /* 🩹 Píldoras/pills claras con texto oscuro para máxima legibilidad */
     .badge-role{
-      background:#e9eefb;           /* fondo claro */
-      color:#111 !important;         /* texto negro forzado */
-      border:1px solid #cbd5e1;      /* borde sutil */
+      background:#e9eefb;
+      color:#111 !important;
+      border:1px solid #cbd5e1;
       font-weight:600;
       padding:.35rem .6rem;
     }
-    /* por si en algún lugar usan text-bg-light/ bg-light como pill */
     .badge.text-bg-light, .badge.bg-light, .badge.bg-info-subtle, .badge.bg-warning-subtle {
       color:#111 !important;
     }
@@ -334,9 +364,30 @@ foreach ($usuariosActivos as $u) {
 
 <div class="container my-4">
   <!-- Header -->
-  <div class="page-title mb-3">
-    <h2 class="mb-1">👥 Gestión de Usuarios</h2>
-    <div class="opacity-75">Administra altas/bajas, roles y resets de contraseña. Tu rol: <b><?= htmlspecialchars($ROL) ?></b></div>
+  <div class="page-title mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <div>
+      <h2 class="mb-1">👥 Gestión de Usuarios</h2>
+      <div class="opacity-75">Administra altas/bajas, roles y resets de contraseña. Tu rol: <b><?= htmlspecialchars($ROL) ?></b></div>
+    </div>
+
+    <!-- Botón Export (activos) -->
+    <?php
+      // arma query preservando filtros actuales
+      $params = [
+        'q'        => $busq,
+        'rol'      => $frol,
+        'sucursal' => $fsuc,
+        'export'   => 'activos'
+      ];
+      // Gerente: si el select está deshabilitado, forzamos su sucursal por claridad (aunque ya se limita en backend)
+      if (!$permAdmin) { $params['sucursal'] = $ID_SUCURSAL; }
+      $exportUrl = $_SERVER['PHP_SELF'].'?'.http_build_query($params);
+    ?>
+    <div>
+      <a class="btn btn-outline-light border-light" href="<?= htmlspecialchars($exportUrl) ?>">
+        <i class="bi bi-download me-1"></i> Exportar activos (CSV)
+      </a>
+    </div>
   </div>
 
   <?= $mensaje ?>
