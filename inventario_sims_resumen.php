@@ -1,11 +1,13 @@
 <?php
-// inventario_sims_resumen.php — Central 2.0 (FINAL corregido)
+// inventario_sims_resumen.php — Central 2.0 (FINAL con 6 operadores + badges rojo si 0)
 // - Filtro por caja robusto: detecta columna (caja_id | id_caja | caja), usa TRIM, soporta VARCHAR/INT.
 // - Export CSV toma los valores actuales del formulario (no exige "Aplicar") y respeta caja/sucursal/rol.
 // - Si el select de sucursal está disabled (vista "Por sucursal"), se envía por <input hidden> para no vaciar el export.
 // - Admin: Global o por sucursal; otros roles: solo su sucursal.
 // - Filtros: operador, tipo_plan, q (ICCID/DN), caja.
 // - UI: KPIs + cards por sucursal + tabla detalle por sucursal.
+// - Contadores por 'Bait','AT&T','Virgin','Unefon','Telcel','Movistar'.
+// - NUEVO: En cards por sucursal, si el conteo de un operador es 0, badge rojo claro.
 
 session_start();
 if (!isset($_SESSION['id_usuario'])) { header("Location: index.php"); exit(); }
@@ -16,6 +18,9 @@ date_default_timezone_set('America/Mexico_City');
 $ROL         = $_SESSION['rol'] ?? 'Ejecutivo';
 $ID_USUARIO  = (int)($_SESSION['id_usuario'] ?? 0);
 $ID_SUCURSAL = (int)($_SESSION['id_sucursal'] ?? 0);
+
+/* ===== Const ===== */
+$OPERADORES = ['Bait','AT&T','Virgin','Unefon','Telcel','Movistar'];
 
 /* ===== Helpers ===== */
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
@@ -111,6 +116,12 @@ if ($haySucursalConcreta) {
   $st->close();
 }
 
+/* ===== Helper UI: clase de badge por operador ===== */
+function badgeOpClass(int $n): string {
+  // >0 = badge azul suave; 0 = badge rojo suave
+  return $n > 0 ? 'badge-soft' : 'badge-zero';
+}
+
 /* ===== KPIs ===== */
 function kpisGlobal(mysqli $conn, $whereSql, $params, $types, $selSucursal, $scope, $caja, $haySucursalConcreta, $CAJA_TR){
   $extra=''; $p=$params; $t=$types;
@@ -123,12 +134,24 @@ function kpisGlobal(mysqli $conn, $whereSql, $params, $types, $selSucursal, $sco
     }
   }
   $sql="SELECT COUNT(*) total,
-               SUM(i.operador='Bait') bait,
-               SUM(i.operador='AT&T') att
+               SUM(i.operador='Bait')     bait,
+               SUM(i.operador='AT&T')     att,
+               SUM(i.operador='Virgin')   virgin,
+               SUM(i.operador='Unefon')   unefon,
+               SUM(i.operador='Telcel')   telcel,
+               SUM(i.operador='Movistar') movistar
         FROM inventario_sims i $whereSql $extra";
   $st=$conn->prepare($sql); if ($p){ $st->bind_param($t, ...$p); } $st->execute();
   $row=$st->get_result()->fetch_assoc() ?: [];
-  return ['total'=>(int)($row['total']??0), 'bait'=>(int)($row['bait']??0), 'att'=>(int)($row['att']??0)];
+  return [
+    'total'    => (int)($row['total']??0),
+    'bait'     => (int)($row['bait']??0),
+    'att'      => (int)($row['att']??0),
+    'virgin'   => (int)($row['virgin']??0),
+    'unefon'   => (int)($row['unefon']??0),
+    'telcel'   => (int)($row['telcel']??0),
+    'movistar' => (int)($row['movistar']??0),
+  ];
 }
 $kpis = kpisGlobal($conn,$whereSql,$params,$types,$selSucursal,$scope,$caja,$haySucursalConcreta,$CAJA_TR);
 
@@ -145,9 +168,13 @@ if ($scope==='global'){
     }
   }
   $sql="SELECT s.id id_suc, s.nombre,
-               COUNT(i.id) disponibles,
-               SUM(i.operador='Bait') bait,
-               SUM(i.operador='AT&T') att
+               COUNT(i.id)                    disponibles,
+               SUM(i.operador='Bait')         bait,
+               SUM(i.operador='AT&T')         att,
+               SUM(i.operador='Virgin')       virgin,
+               SUM(i.operador='Unefon')       unefon,
+               SUM(i.operador='Telcel')       telcel,
+               SUM(i.operador='Movistar')     movistar
         FROM sucursales s
         LEFT JOIN inventario_sims i ON i.id_sucursal=s.id
         $whereSql $extra
@@ -155,7 +182,12 @@ if ($scope==='global'){
         HAVING disponibles > 0
         ORDER BY s.nombre";
   $st=$conn->prepare($sql); if ($p){ $st->bind_param($t, ...$p); } $st->execute();
-  $res=$st->get_result(); while($row=$res->fetch_assoc()){ $cards[]=$row; }
+  $res=$st->get_result(); while($row=$res->fetch_assoc()){
+    foreach (['disponibles','bait','att','virgin','unefon','telcel','movistar'] as $k){
+      $row[$k] = (int)($row[$k] ?? 0);
+    }
+    $cards[]=$row;
+  }
 }
 
 /* ===== Detalle de una sucursal ===== */
@@ -253,11 +285,13 @@ require_once __DIR__ . '/navbar.php';
     .suc-card{ border:0; border-radius:1rem; box-shadow:0 4px 16px rgba(0,0,0,.06); transition:.2s transform; }
     .suc-card:hover{ transform: translateY(-3px); }
     .badge-soft{ background:rgba(13,110,253,.1); color:#0d6efd; }
+    .badge-zero{ background:rgba(220,53,69,.12); color:#dc3545; border:1px solid rgba(220,53,69,.18); }
     .grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap:1rem; }
     .sticky-top-lite{ position: sticky; top: .5rem; z-index: 100; }
     .table thead th{ position:sticky; top:0; background:var(--bs-body-bg); z-index:5; }
     .searchbar{ max-width: 380px; }
     .hint{ font-size:.86rem; color: var(--bs-secondary-color); }
+    .badges-ops .badge{ font-weight:600; }
   </style>
 </head>
 <body class="bg-body-tertiary">
@@ -326,7 +360,15 @@ require_once __DIR__ . '/navbar.php';
             <div class="col-auto">
               <label class="form-label mb-1">Operador</label>
               <select name="operador" class="form-select">
-                <?= selectOptions(['ALL'=>'Todos','Bait'=>'Bait','AT&T'=>'AT&T'], $operador); ?>
+                <?= selectOptions([
+                  'ALL'=>'Todos',
+                  'Bait'=>'Bait',
+                  'AT&T'=>'AT&T',
+                  'Virgin'=>'Virgin',
+                  'Unefon'=>'Unefon',
+                  'Telcel'=>'Telcel',
+                  'Movistar'=>'Movistar'
+                ], $operador); ?>
               </select>
             </div>
             <div class="col-auto">
@@ -353,7 +395,7 @@ require_once __DIR__ . '/navbar.php';
 
   <!-- KPIs -->
   <div class="row g-3 mb-4">
-    <div class="col-12 col-md-4">
+    <div class="col-12 col-lg-4">
       <div class="card kpi-card">
         <div class="card-body">
           <div class="kpi-sub text-secondary">SIMs disponibles</div>
@@ -362,23 +404,49 @@ require_once __DIR__ . '/navbar.php';
         </div>
       </div>
     </div>
-    <div class="col-6 col-md-4">
-      <div class="card kpi-card">
-        <div class="card-body">
-          <div class="kpi-sub text-secondary">Bait</div>
-          <div class="kpi-value"><?= number_format($kpis['bait']); ?></div>
-          <div class="small text-secondary">Por operador</div>
-        </div>
-      </div>
+
+    <!-- Operadores: 6 tarjetas compactas (sin rojo/azul dinámico para no recargar) -->
+    <div class="col-6 col-lg-2">
+      <div class="card kpi-card"><div class="card-body">
+        <div class="kpi-sub text-secondary">Bait</div>
+        <div class="kpi-value"><?= number_format($kpis['bait']); ?></div>
+        <div class="small text-secondary">Por operador</div>
+      </div></div>
     </div>
-    <div class="col-6 col-md-4">
-      <div class="card kpi-card">
-        <div class="card-body">
-          <div class="kpi-sub text-secondary">AT&amp;T</div>
-          <div class="kpi-value"><?= number_format($kpis['att']); ?></div>
-          <div class="small text-secondary">Por operador</div>
-        </div>
-      </div>
+    <div class="col-6 col-lg-2">
+      <div class="card kpi-card"><div class="card-body">
+        <div class="kpi-sub text-secondary">AT&amp;T</div>
+        <div class="kpi-value"><?= number_format($kpis['att']); ?></div>
+        <div class="small text-secondary">Por operador</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-lg-2">
+      <div class="card kpi-card"><div class="card-body">
+        <div class="kpi-sub text-secondary">Virgin</div>
+        <div class="kpi-value"><?= number_format($kpis['virgin']); ?></div>
+        <div class="small text-secondary">Por operador</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-lg-2">
+      <div class="card kpi-card"><div class="card-body">
+        <div class="kpi-sub text-secondary">Unefon</div>
+        <div class="kpi-value"><?= number_format($kpis['unefon']); ?></div>
+        <div class="small text-secondary">Por operador</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-lg-2">
+      <div class="card kpi-card"><div class="card-body">
+        <div class="kpi-sub text-secondary">Telcel</div>
+        <div class="kpi-value"><?= number_format($kpis['telcel']); ?></div>
+        <div class="small text-secondary">Por operador</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-lg-2">
+      <div class="card kpi-card"><div class="card-body">
+        <div class="kpi-sub text-secondary">Movistar</div>
+        <div class="kpi-value"><?= number_format($kpis['movistar']); ?></div>
+        <div class="small text-secondary">Por operador</div>
+      </div></div>
     </div>
   </div>
 
@@ -395,9 +463,13 @@ require_once __DIR__ . '/navbar.php';
               <span class="badge text-bg-light">ID <?= (int)$c['id_suc']; ?></span>
             </div>
             <div class="display-6 fw-bold mb-2"><?= number_format((int)$c['disponibles']); ?></div>
-            <div class="d-flex gap-2 mb-3">
-              <span class="badge badge-soft">Bait: <?= (int)$c['bait']; ?></span>
-              <span class="badge badge-soft">AT&amp;T: <?= (int)$c['att']; ?></span>
+            <div class="d-flex gap-2 mb-3 flex-wrap badges-ops">
+              <span class="badge <?= badgeOpClass((int)$c['bait']); ?>">Bait: <?= (int)$c['bait']; ?></span>
+              <span class="badge <?= badgeOpClass((int)$c['att']); ?>">AT&amp;T: <?= (int)$c['att']; ?></span>
+              <span class="badge <?= badgeOpClass((int)$c['virgin']); ?>">Virgin: <?= (int)$c['virgin']; ?></span>
+              <span class="badge <?= badgeOpClass((int)$c['unefon']); ?>">Unefon: <?= (int)$c['unefon']; ?></span>
+              <span class="badge <?= badgeOpClass((int)$c['telcel']); ?>">Telcel: <?= (int)$c['telcel']; ?></span>
+              <span class="badge <?= badgeOpClass((int)$c['movistar']); ?>">Movistar: <?= (int)$c['movistar']; ?></span>
             </div>
             <div class="d-flex gap-2 flex-wrap">
               <a class="btn btn-sm btn-outline-primary"
@@ -412,9 +484,9 @@ require_once __DIR__ . '/navbar.php';
                 onclick="(function(f){
                   const sel = f.querySelector('select[name=sucursal]');
                   if (sel) sel.value='<?= (int)$c['id_suc']; ?>';
-                  const hid = f.querySelector('input[type=hidden][name=sucursal]');
+                  const hid = f.querySelector('input[type=hidden][name=sucursal]'); 
                   if (hid) hid.value='<?= (int)$c['id_suc']; ?>';
-                })(document.getElementById('filtros'));">
+                })(document.getElementById('filtros')); ">
                 Exportar CSV
               </button>
             </div>
