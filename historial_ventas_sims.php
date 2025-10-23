@@ -1,6 +1,6 @@
 <?php
 /* =========================================================
-   Historial de Ventas SIM — versión corregida
+   Historial de Ventas SIM — versión corregida (SIM KY)
    - Semana Mar→Lun estable con TZ MX antes de calcular
    - Filtros GET robustos (tipo_venta, usuario, buscar)
    - Navegación prev/next preserva filtros
@@ -246,7 +246,8 @@ $sumComEje     = 0.0;
 $sumComGer     = 0.0;
 $cntEsim       = 0;
 $cntFisicas    = 0;
-$tipoCounts    = ['Nueva'=>0,'Portabilidad'=>0,'Regalo'=>0,'Pospago'=>0];
+/* ← Agregamos SIM KY al arreglo de conteo */
+$tipoCounts    = ['Nueva'=>0,'Portabilidad'=>0,'Regalo'=>0,'Pospago'=>0,'SIM KY'=>0];
 
 foreach ($ventas as $v) {
   $sumPrecio += (float)$v['precio_total'];
@@ -349,6 +350,8 @@ foreach ($ventas as $v) {
     <span class="chip chip-info"><i class="bi bi-arrow-left-right"></i> Portabilidad: <?= (int)$tipoCounts['Portabilidad'] ?></span>
     <span class="chip chip-info"><i class="bi bi-gift"></i> Regalo: <?= (int)$tipoCounts['Regalo'] ?></span>
     <span class="chip chip-info"><i class="bi bi-bank"></i> Pospago: <?= (int)$tipoCounts['Pospago'] ?></span>
+    <!-- Nueva pill SIM KY -->
+    <span class="chip chip-info"><i class="bi bi-sim"></i> SIM KY: <?= (int)$tipoCounts['SIM KY'] ?></span>
   </div>
 
   <!-- Filtros -->
@@ -389,6 +392,8 @@ foreach ($ventas as $v) {
           <option value="Portabilidad"  <?= $tv==='Portabilidad'?'selected':'' ?>>Portabilidad</option>
           <option value="Regalo"        <?= $tv==='Regalo'?'selected':'' ?>>Regalo</option>
           <option value="Pospago"       <?= $tv==='Pospago'?'selected':'' ?>>Pospago</option>
+          <!-- Nueva opción SIM KY -->
+          <option value="SIM KY"        <?= $tv==='SIM KY'?'selected':'' ?>>SIM KY</option>
         </select>
       </div>
       <div class="col-md-3">

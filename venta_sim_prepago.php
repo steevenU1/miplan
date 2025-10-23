@@ -1,8 +1,9 @@
 <?php
 /* venta_sim_prepago.php — Alta express de SIM (misma página) + venta normal
-   - DN obligatorio en alta
-   - Mensaje de duplicado muestra nombre de sucursal
-   - Si ICCID ya existe Disponible en tu sucursal, lo preselecciona
+   Ajustes:
+   - Tipo de venta incluye "SIM KY".
+   - Se elimina el campo "Precio" y se guarda precio_total / precio_unitario = NULL.
+   - JS sin validaciones de precio.
 */
 session_start();
 if (!isset($_SESSION['id_usuario'])) { header("Location: index.php"); exit(); }
@@ -25,7 +26,6 @@ function obtenerEsquemaVigente($conn, $fechaVenta) {
     $sql = "SELECT * FROM esquemas_comisiones
             WHERE fecha_inicio <= ?
               AND (fecha_fin IS NULL OR fecha_fin >= ?)
-              AND activo = 1
             ORDER BY fecha_inicio DESC
             LIMIT 1";
     $stmt = $conn->prepare($sql);
@@ -66,6 +66,9 @@ function cumpleCuotaSucursal($conn, $idSucursal, $fechaVenta) {
     return $monto >= $cuota;
 }
 function calcularComisionesSIM($esquema, $tipoSim, $tipoVenta, $cumpleCuota) {
+    // SIM KY => 0 por defecto (ajustamos cuando haya reglas)
+    if (strtolower($tipoVenta) === 'sim ky') return 0.0;
+
     $tipoSim   = strtolower($tipoSim);
     $tipoVenta = strtolower($tipoVenta);
     $col = null;
@@ -79,7 +82,6 @@ function calcularComisionesSIM($esquema, $tipoSim, $tipoVenta, $cumpleCuota) {
             ? ($cumpleCuota ? 'comision_sim_att_port_con' : 'comision_sim_att_port_sin')
             : ($cumpleCuota ? 'comision_sim_att_nueva_con' : 'comision_sim_att_nueva_sin');
     }
-
     return (float)($esquema[$col] ?? 0);
 }
 function redir($msg, $extra = []) {
@@ -147,16 +149,15 @@ if (($_SERVER['REQUEST_METHOD'] === 'POST') && (($_POST['accion'] ?? '') === 'al
 }
 
 /* =========================
-   PROCESAR VENTA SIM (tu lógica intacta)
+   PROCESAR VENTA SIM
 ========================= */
 require_once __DIR__ . '/candado_captura.php';
 abortar_si_captura_bloqueada(); // por defecto bloquea POST
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['accion'] ?? '') !== 'alta_sim')) {
-    $idSim       = (int)$_POST['id_sim'];
-    $tipoVenta   = $_POST['tipo_venta'];
-    $precio      = (float)$_POST['precio'];
-    $comentarios = trim($_POST['comentarios']);
+    $idSim       = (int)($_POST['id_sim'] ?? 0);
+    $tipoVenta   = trim($_POST['tipo_venta'] ?? '');
+    $comentarios = trim($_POST['comentarios'] ?? '');
     $fechaVenta  = date('Y-m-d');
 
     // 1) Verificar SIM y OBTENER operador DESDE INVENTARIO (ignorar POST)
@@ -181,23 +182,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['accion'] ?? '') !== 'alta
 
         $comisionEjecutivo = calcularComisionesSIM($esquema, $tipoSim, $tipoVenta, $cumpleCuota);
         $comisionGerente   = $comisionEjecutivo > 0
-            ? ($cumpleCuota ? $esquema['comision_gerente_sim_con'] : $esquema['comision_gerente_sim_sin'])
+            ? ($cumpleCuota ? ($esquema['comision_gerente_sim_con'] ?? 0) : ($esquema['comision_gerente_sim_sin'] ?? 0))
             : 0;
 
-        // 3) Insertar venta
+        // 3) Insertar venta (precio_total = NULL)
         $sqlVenta = "INSERT INTO ventas_sims
             (tipo_venta, tipo_sim, comentarios, precio_total, comision_ejecutivo, comision_gerente, id_usuario, id_sucursal, fecha_venta)
-            VALUES (?,?,?,?,?,?,?,?,NOW())";
+            VALUES (?,?,?, NULL, ?, ?, ?, ?, NOW())";
         $stmt = $conn->prepare($sqlVenta);
-        $stmt->bind_param("sssddiii", $tipoVenta, $tipoSim, $comentarios, $precio, $comisionEjecutivo, $comisionGerente, $idUsuario, $idSucursal);
+        $stmt->bind_param("sssddii", $tipoVenta, $tipoSim, $comentarios, $comisionEjecutivo, $comisionGerente, $idUsuario, $idSucursal);
         $stmt->execute();
-        $idVenta = $stmt->insert_id;
+        $idVenta = (int)$stmt->insert_id;
         $stmt->close();
 
-        // 4) Detalle
-        $sqlDetalle = "INSERT INTO detalle_venta_sims (id_venta, id_sim, precio_unitario) VALUES (?,?,?)";
+        // 4) Detalle: precio_unitario = NULL
+        $sqlDetalle = "INSERT INTO detalle_venta_sims (id_venta, id_sim, precio_unitario) VALUES (?,?,NULL)";
         $stmt = $conn->prepare($sqlDetalle);
-        $stmt->bind_param("iid", $idVenta, $idSim, $precio);
+        $stmt->bind_param("ii", $idVenta, $idSim);
         $stmt->execute();
         $stmt->close();
 
@@ -240,7 +241,7 @@ $stmt->close();
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Venta SIM Prepago</title>
+  <title>Venta SIM</title>
 
   <!-- Bootstrap 5 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
@@ -287,7 +288,7 @@ $stmt->close();
 
   <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
-      <h2 class="page-title mb-1"><i class="bi bi-sim me-2"></i>Venta de SIM Prepago</h2>
+      <h2 class="page-title mb-1"><i class="bi bi-sim me-2"></i>Venta de SIM</h2>
       <div class="help-text">Selecciona la SIM y confirma los datos en el modal antes de enviar.</div>
     </div>
   </div>
@@ -328,12 +329,6 @@ $stmt->close();
             <?php endforeach; ?>
           </select>
           <div class="form-text">Escribe ICCID, operador o caja para filtrar.</div>
-
-          <div class="d-flex gap-2 mt-2">
-            <!-- <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalAltaSim">
-              <i class="bi bi-plus-circle me-1"></i> Agregar SIM (no está en inventario)
-            </button> -->
-          </div>
         </div>
 
         <!-- Operador solo lectura -->
@@ -347,22 +342,17 @@ $stmt->close();
 
       <div class="section-title"><i class="bi bi-receipt"></i> Datos de la venta</div>
       <div class="row g-3 mb-3">
-        <div class="col-md-3">
+        <div class="col-md-4">
           <label class="form-label">Tipo de venta</label>
           <select name="tipo_venta" id="tipo_venta" class="form-select" required>
             <option value="Nueva">Nueva</option>
             <option value="Portabilidad">Portabilidad</option>
-            <option value="Regalo">Regalo (costo 0)</option>
+            <option value="Regalo">Regalo</option>
+            <option value="SIM KY">SIM KY</option>
           </select>
         </div>
 
-        <div class="col-md-3">
-          <label class="form-label">Precio</label>
-          <input type="number" step="0.01" name="precio" id="precio" class="form-control" value="0" required>
-          <div class="form-text" id="precio_help">Para “Regalo”, el precio debe ser 0.</div>
-        </div>
-
-        <div class="col-md-6">
+        <div class="col-md-8">
           <label class="form-label">Comentarios</label>
           <input type="text" name="comentarios" id="comentarios" class="form-control" placeholder="Notas (opcional)">
         </div>
@@ -461,7 +451,6 @@ $stmt->close();
                   <li><strong>ICCID:</strong> <span id="conf_iccid">—</span></li>
                   <li><strong>Operador:</strong> <span id="conf_operador">—</span></li>
                   <li><strong>Tipo de venta:</strong> <span id="conf_tipo">—</span></li>
-                  <li><strong>Precio:</strong> $<span id="conf_precio">0.00</span></li>
                   <li class="text-muted"><em>Comentarios:</em> <span id="conf_comentarios">—</span></li>
                 </ul>
               </div>
@@ -487,16 +476,16 @@ $stmt->close();
 </div>
 
 <!-- JS -->
-<!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script> -->
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-
 <script>
+// Necesitas Bootstrap bundle para el modal:
+window.bootstrap || document.write('<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"><\/script>');
+
 $(function(){
   const modalConfirm = new bootstrap.Modal(document.getElementById('modalConfirmacion'));
   const $form   = $('#formVentaSim');
   const $simSel = $('#selectSim');
-  const $precio = $('#precio');
   const $tipo   = $('#tipo_venta');
   const $coment = $('#comentarios');
   const $tipoSimView = $('#tipoSimView');
@@ -519,21 +508,6 @@ $(function(){
   actualizarTipo();
   $simSel.on('change', actualizarTipo);
 
-  // Reglas de precio
-  function ajustarAyudaPrecio(){
-    if ($tipo.val() === 'Regalo') {
-      $precio.val('0.00').prop('readonly', true).addClass('readonly-hint');
-      $('#precio_help').text('Para “Regalo”, el precio es 0 y no se puede editar.');
-    } else {
-      $precio.prop('readonly', false).removeClass('readonly-hint');
-      if ($tipo.val() === 'Nueva' || $tipo.val() === 'Portabilidad') {
-        $('#precio_help').text('Para “Nueva” o “Portabilidad”, el precio debe ser mayor a 0.');
-      } else { $('#precio_help').text('Define el precio de la SIM.'); }
-    }
-  }
-  ajustarAyudaPrecio();
-  $('#tipo_venta').on('change', ajustarAyudaPrecio);
-
   // Validación + Modal
   let allowSubmit = false;
 
@@ -541,16 +515,10 @@ $(function(){
     const errores = [];
     const idSim = $simSel.val();
     const tipo  = $tipo.val();
-    const precio = parseFloat($precio.val());
 
     if (!idSim) errores.push('Selecciona una SIM disponible.');
     if (!tipo) errores.push('Selecciona el tipo de venta.');
 
-    if (tipo === 'Regalo') {
-      if (isNaN(precio) || Number(precio.toFixed(2)) !== 0) errores.push('En “Regalo”, el precio debe ser exactamente 0.');
-    } else {
-      if (isNaN(precio) || precio <= 0) errores.push('El precio debe ser mayor a 0 para Nueva/Portabilidad.');
-    }
     return errores;
   }
 
@@ -559,13 +527,11 @@ $(function(){
     const iccid = ($opt.data('iccid') || '').toString();
     const operador = ($opt.data('operador') || '').toString();
     const tipo = $tipo.val() || '—';
-    const precio = parseFloat($precio.val()) || 0;
     const comentarios = ($coment.val() || '').trim();
 
     $('#conf_iccid').text(iccid || '—');
     $('#conf_operador').text(operador || '—');
     $('#conf_tipo').text(tipo);
-    $('#conf_precio').text(precio.toFixed(2));
     $('#conf_comentarios').text(comentarios || '—');
   }
 
