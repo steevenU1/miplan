@@ -1,11 +1,11 @@
 <?php
 // inventario_global.php — LUGA (RAM + "Almacenamiento", fecha sin hora, tabla compacta)
-// Ahora con columna "Cantidad" y KPIs separados para Equipos vs Accesorios.
+// Cantidad ahora viene DIRECTO de BD: inventario.cantidad
 session_start();
 if (!isset($_SESSION['id_usuario'])) { header("Location: 403.php"); exit(); }
 
 $ROL = $_SESSION['rol'] ?? '';
-$ALLOWED = ['Admin','GerenteZona', 'Logistica'];
+$ALLOWED = ['Admin','GerenteZona','Logistica'];
 if (!in_array($ROL, $ALLOWED, true)) { header("Location: 403.php"); exit(); }
 
 // No se puede editar precio desde esta vista
@@ -27,10 +27,12 @@ $filtroEstatus    = $_GET['estatus']     ?? '';
 $filtroAntiguedad = $_GET['antiguedad']  ?? '';
 $filtroPrecioMin  = $_GET['precio_min']  ?? '';
 $filtroPrecioMax  = $_GET['precio_max']  ?? '';
-$filtroModelo     = $_GET['modelo']      ?? ''; // <<< FILTRO MODELO
+$filtroModelo     = $_GET['modelo']      ?? ''; // FILTRO MODELO
 
 $sql = "
-  SELECT i.id AS id_inventario,
+  SELECT
+         i.id AS id_inventario,
+         i.cantidad,                 -- << NUEVO: cantidad desde BD
          s.id AS id_sucursal,
          s.nombre AS sucursal,
          p.id AS id_producto,
@@ -43,7 +45,8 @@ $sql = "
          p.codigo_producto,
          p.tipo_producto,
          (p.precio_lista - COALESCE(p.costo_con_iva, p.costo, 0)) AS profit,
-         i.estatus, i.fecha_ingreso,
+         i.estatus,
+         i.fecha_ingreso,
          TIMESTAMPDIFF(DAY, i.fecha_ingreso, NOW()) AS antiguedad_dias
   FROM inventario i
   INNER JOIN productos p ON p.id = i.id_producto
@@ -93,6 +96,7 @@ $result = $stmt->get_result();
 $sucursales = $conn->query("SELECT id, nombre FROM sucursales ORDER BY nombre");
 
 // ===== Agregados/KPIs =====
+// Ahora todos los contadores y promedios se ponderan por 'cantidad' (unidades)
 $rangos = ['<30' => 0, '30-90' => 0, '>90' => 0];
 $inventario = [];
 
@@ -100,46 +104,46 @@ $inventario = [];
 $equiposTotal = 0; $equiposDisp = 0; $equiposTrans = 0;
 $accesTotal   = 0; $accesDisp   = 0; $accesTrans   = 0;
 
-// Promedios globales (pueden mezclar equipos y accesorios; si prefieres solo equipos, ajustar abajo)
-$sumAntiguedad=0; $sumPrecio=0.0; $sumProfit=0.0; $totalRows=0;
-
-// Mapa para cantidades de accesorios por (sucursal, id_producto)
-$accCounts = []; // $accCounts[$id_sucursal][$id_producto] = cantidad
+// Promedios globales ponderados por unidades
+$sumAntiguedad=0; $sumPrecio=0.0; $sumProfit=0.0; $totalUnidades=0;
 
 while ($row = $result->fetch_assoc()) {
+  // Normaliza cantidad (mínimo 1)
+  $cant = max(1, (int)($row['cantidad'] ?? 1));
+  $row['cantidad'] = $cant;
+
   $inventario[] = $row;
 
+  // Antigüedad por rangos (ponderado por cantidad)
   $dias = (int)$row['antiguedad_dias'];
-  if ($dias < 30) $rangos['<30']++;
-  elseif ($dias <= 90) $rangos['30-90']++;
-  else $rangos['>90']++;
+  if ($dias < 30)        $rangos['<30']   += $cant;
+  elseif ($dias <= 90)   $rangos['30-90'] += $cant;
+  else                   $rangos['>90']   += $cant;
 
-  $totalRows++;
-  $sumAntiguedad += $dias;
-  $sumPrecio  += (float)$row['precio_lista'];
-  $sumProfit  += (float)$row['profit'];
+  // Promedios ponderados
+  $totalUnidades += $cant;
+  $sumAntiguedad += ($dias * $cant);
+  $sumPrecio     += ((float)$row['precio_lista'] * $cant);
+  $sumProfit     += ((float)$row['profit']       * $cant);
 
+  // Totales/KPIs por tipo (equipos vs accesorios) y estatus
   $esAccesorio = (strcasecmp((string)$row['tipo_producto'], 'Accesorio') === 0);
   $estatus = (string)$row['estatus'];
 
   if ($esAccesorio) {
-    $accesTotal++;
-    if ($estatus === 'Disponible') $accesDisp++;
-    if ($estatus === 'En tránsito') $accesTrans++;
-    $sid = (int)$row['id_sucursal']; $pid = (int)$row['id_producto'];
-    if (!isset($accCounts[$sid])) $accCounts[$sid] = [];
-    if (!isset($accCounts[$sid][$pid])) $accCounts[$sid][$pid] = 0;
-    $accCounts[$sid][$pid]++; // cantidad por sucursal/modelo
+    $accesTotal += $cant;
+    if ($estatus === 'Disponible')  $accesDisp   += $cant;
+    if ($estatus === 'En tránsito') $accesTrans  += $cant;
   } else {
-    $equiposTotal++;
-    if ($estatus === 'Disponible') $equiposDisp++;
-    if ($estatus === 'En tránsito') $equiposTrans++;
+    $equiposTotal += $cant;
+    if ($estatus === 'Disponible')  $equiposDisp += $cant;
+    if ($estatus === 'En tránsito') $equiposTrans+= $cant;
   }
 }
 
-$promAntiguedad = $totalRows ? round($sumAntiguedad / $totalRows, 1) : 0;
-$promPrecio     = $totalRows ? round($sumPrecio / $totalRows, 2) : 0.0;
-$promProfit     = $totalRows ? round($sumProfit / $totalRows, 2) : 0.0;
+$promAntiguedad = $totalUnidades ? round($sumAntiguedad / $totalUnidades, 1) : 0;
+$promPrecio     = $totalUnidades ? round($sumPrecio / $totalUnidades, 2)     : 0.0;
+$promProfit     = $totalUnidades ? round($sumProfit / $totalUnidades, 2)     : 0.0;
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -234,7 +238,7 @@ $promProfit     = $totalRows ? round($sumProfit / $totalRows, 2) : 0.0;
     <div class="col-6 col-md-3 col-lg-2">
       <div class="kpi"><h6>Ticket promedio</h6><div class="metric">$<?= number_format($promPrecio,2) ?></div></div>
     </div>
-    <!-- Si prefieres, cambia este profit a solo equipos; por ahora es global -->
+    <!-- Profit promedio ponderado por unidades -->
     <div class="col-6 col-md-3 col-lg-2">
       <div class="kpi"><h6>Profit prom.</h6><div class="metric <?= $promProfit>=0?'text-success':'text-danger' ?>">$<?= number_format($promProfit,2) ?></div></div>
     </div>
@@ -347,7 +351,7 @@ $promProfit     = $totalRows ? round($sumProfit / $totalRows, 2) : 0.0;
           <th>Costo c/IVA ($)</th>
           <th>Precio Lista ($)</th>
           <th>Profit ($)</th>
-          <th>Cantidad</th> <!-- NUEVA COLUMNA -->
+          <th>Cantidad</th> <!-- ahora viene de BD -->
           <th>Estatus</th>
           <th>Fecha ingreso</th>
           <th>Antigüedad</th>
@@ -365,12 +369,8 @@ $promProfit     = $totalRows ? round($sumProfit / $totalRows, 2) : 0.0;
           : '<span class="chip"><span class="status-dot dot-amber"></span>En tránsito</span>';
         $fechaSolo = h(substr((string)$row['fecha_ingreso'], 0, 10)); // YYYY-MM-DD
 
-        $esAccesorio = (strcasecmp((string)$row['tipo_producto'], 'Accesorio') === 0);
-        $cantidad = 1;
-        if ($esAccesorio) {
-          $sid = (int)$row['id_sucursal']; $pid = (int)$row['id_producto'];
-          $cantidad = $accCounts[$sid][$pid] ?? 1; // total por sucursal/modelo (según datos ya filtrados)
-        }
+        // Cantidad desde BD con mínimo 1
+        $cantidad = max(1, (int)($row['cantidad'] ?? 1));
       ?>
         <tr>
           <td><?= h($row['sucursal']) ?></td>
@@ -444,7 +444,7 @@ $promProfit     = $totalRows ? round($sumProfit / $totalRows, 2) : 0.0;
     });
   }
 
-  // DataTable (ajuste de índice: ahora "Fecha ingreso" es la columna 14 (0-based))
+  // DataTable (índice: "Fecha ingreso" es la columna 14 (0-based))
   $(function() {
     $('#tablaInventario').DataTable({
       pageLength: 25,
@@ -472,7 +472,7 @@ $promProfit     = $totalRows ? round($sumProfit / $totalRows, 2) : 0.0;
     });
   });
 
-  // Gráfica antigüedad
+  // Gráfica antigüedad (ya usa unidades por rango)
   (function(){
     const ctx = document.getElementById('graficaAntiguedad').getContext('2d');
     new Chart(ctx, {
@@ -485,7 +485,7 @@ $promProfit     = $totalRows ? round($sumProfit / $totalRows, 2) : 0.0;
     });
   })();
 
-  // Top vendidos
+  // Top vendidos (sin cambios aquí; ajuste en backend si quieres ponderar por cantidad)
   function cargarTopVendidos(rango = 'historico') {
     fetch('top_productos.php?rango=' + encodeURIComponent(rango))
       .then(res => res.text())

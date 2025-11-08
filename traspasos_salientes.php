@@ -7,21 +7,36 @@ if (!isset($_SESSION['id_usuario'])) {
 
 require_once __DIR__ . '/db.php';
 
-$idSucursalUsuario = (int)$_SESSION['id_sucursal'];
-$rolUsuario        = $_SESSION['rol'] ?? '';
+$idSucursalUsuario = (int)($_SESSION['id_sucursal'] ?? 0);
+
+// Normaliza rol y define flag de Admin (tolerante a espacios/caso)
+$rolUsuarioRaw = $_SESSION['rol'] ?? '';
+$rolUsuario    = trim((string)$rolUsuarioRaw);
+$isAdmin       = (strcasecmp($rolUsuario, 'Admin') === 0);
+
 $mensaje = "";
 
-// Mensaje de eliminación (opcional)
-if (isset($_GET['msg']) && $_GET['msg'] === 'eliminado') {
-    $mensaje = "<div class='alert alert-success'>✅ Traspaso eliminado correctamente.</div>";
+// Mensajes de operación
+if (isset($_GET['msg'])) {
+    if ($_GET['msg'] === 'eliminado') {
+        $mensaje = "<div class='alert alert-success'>✅ Traspaso eliminado correctamente.</div>";
+    } elseif ($_GET['msg'] === 'no_permitido') {
+        $mensaje = "<div class='alert alert-warning'>⚠️ No tienes permisos para eliminar traspasos.</div>";
+    } elseif ($_GET['msg'] === 'no_pendiente') {
+        $mensaje = "<div class='alert alert-danger'>❌ Solo se pueden eliminar traspasos en estatus Pendiente.</div>";
+    } elseif ($_GET['msg'] === 'no_encontrado') {
+        $mensaje = "<div class='alert alert-danger'>❌ Traspaso no encontrado.</div>";
+    } elseif ($_GET['msg'] === 'error') {
+        $mensaje = "<div class='alert alert-danger'>❌ Ocurrió un error al eliminar el traspaso.</div>";
+    }
 }
 
-// Escapar seguro
+// Helpers
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function n0($v){ return number_format((float)$v,0); }
 function n1($v){ return number_format((float)$v,1); }
 
-// Utilidad: detectar si existe una columna (para usar bitácoras si existen)
+// Detectar columnas opcionales
 function hasColumn(mysqli $conn, string $table, string $column): bool {
     $table  = $conn->real_escape_string($table);
     $column = $conn->real_escape_string($column);
@@ -50,12 +65,11 @@ $stmtPend->execute();
 $resPend = $stmtPend->get_result();
 $stmtPend->close();
 
-// Guardamos los pendientes en arreglo para poder usarlos varias veces
 $pendRows = [];
 while($r = $resPend->fetch_assoc()) { $pendRows[] = $r; }
 
 /* ===================== KPIs (cards arriba) ===================== */
-// 1) Piezas en tránsito (suma de detalles de todos los pendientes)
+// 1) Piezas en tránsito
 $stmtPzas = $conn->prepare("
   SELECT COUNT(*) AS piezas
   FROM detalle_traspaso dt
@@ -82,9 +96,9 @@ $stmtAges->execute();
 $rowAges = $stmtAges->get_result()->fetch_assoc();
 $stmtAges->close();
 
-$kpi_avg   = (float)($rowAges['avg_dias'] ?? 0);
-$kpi_max   = (int)($rowAges['max_dias'] ?? 0);
-$kpi_ge3   = (int)($rowAges['ge3'] ?? 0);
+$kpi_avg = (float)($rowAges['avg_dias'] ?? 0);
+$kpi_max = (int)($rowAges['max_dias'] ?? 0);
+$kpi_ge3 = (int)($rowAges['ge3'] ?? 0);
 
 // 3) Enviados últimos 7 días
 $stmt7 = $conn->prepare("
@@ -98,7 +112,7 @@ $row7 = $stmt7->get_result()->fetch_assoc();
 $stmt7->close();
 $kpi_7d = (int)($row7['c7'] ?? 0);
 
-// 4) Enviados mes en curso (MTD)
+// 4) Enviados mes en curso
 $stmtMTD = $conn->prepare("
   SELECT COUNT(*) AS mtd
   FROM traspasos t
@@ -112,7 +126,7 @@ $rowMTD = $stmtMTD->get_result()->fetch_assoc();
 $stmtMTD->close();
 $kpi_mtd = (int)($rowMTD['mtd'] ?? 0);
 
-// 5) Tasa de rechazo (mes): por detalle si existe; si no, por estatus del traspaso
+// 5) Tasa de rechazo (mes)
 if ($hasDT_Resultado) {
   $stmtRej = $conn->prepare("
     SELECT 
@@ -139,20 +153,19 @@ $stmtRej->bind_param("i", $idSucursalUsuario);
 $stmtRej->execute();
 $rowRej = $stmtRej->get_result()->fetch_assoc();
 $stmtRej->close();
-
 $rej = (int)($rowRej['rej'] ?? 0);
 $proc = (int)($rowRej['proc'] ?? 0);
 $kpi_rej_pct = $proc > 0 ? round(($rej / $proc) * 100, 1) : null;
 
 /* =========================================================
-   HISTÓRICO: filtros (también por SUCURSAL origen)
+   HISTÓRICO (filtros)
 ========================================================= */
 $desde   = $_GET['desde']   ?? date('Y-m-01');
 $hasta   = $_GET['hasta']   ?? date('Y-m-d');
 $estatus = $_GET['estatus'] ?? 'Todos'; // Todos / Pendiente / Parcial / Completado / Rechazado
 $idDest  = (int)($_GET['destino'] ?? 0);
 
-// Para combo de destinos (solo los que han recibido algo de mi suc)
+// Destinos usados por la sucursal origen
 $destinos = [];
 $qDest = $conn->prepare("
     SELECT DISTINCT s.id, s.nombre
@@ -169,7 +182,7 @@ while ($row = $rDest->fetch_assoc()) {
 }
 $qDest->close();
 
-// WHERE dinámico para histórico
+// WHERE dinámico
 $whereH = "t.id_sucursal_origen = ? AND DATE(t.fecha_traspaso) BETWEEN ? AND ?";
 $params = [$idSucursalUsuario, $desde, $hasta];
 $types  = "iss";
@@ -218,18 +231,13 @@ $stmtHist->close();
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 
   <style>
-    :root{
-      --brand:#0d6efd;
-      --brand-100: rgba(13,110,253,.08);
-    }
+    :root{ --brand:#0d6efd; --brand-100: rgba(13,110,253,.08); }
     body.bg-light{
       background:
         radial-gradient(1100px 420px at 110% -80%, var(--brand-100), transparent),
         radial-gradient(1100px 420px at -10% 120%, rgba(25,135,84,.06), transparent),
         #f8fafc;
     }
-
-    /* ✅ Ajustes del NAVBAR para móviles (sin tocar navbar.php) */
     #topbar, .navbar-luga{ font-size:16px; }
     @media (max-width: 576px){
       #topbar, .navbar-luga{
@@ -243,9 +251,7 @@ $stmtHist->close();
       .navbar-luga .nav-avatar, .navbar-luga .nav-initials{ width:2.1em; height:2.1em; }
       .navbar .dropdown-menu{ font-size:.95em; }
     }
-    @media (max-width: 360px){
-      #topbar, .navbar-luga{ font-size:15px; }
-    }
+    @media (max-width: 360px){ #topbar, .navbar-luga{ font-size:15px; } }
 
     .badge-status{font-size:.85rem}
     .table-sm td, .table-sm th{vertical-align: middle;}
@@ -257,10 +263,8 @@ $stmtHist->close();
       background: linear-gradient(135deg, #22c55e 0%, #0ea5e9 55%, #6366f1 100%);
       color:#fff; padding:1rem 1.25rem; box-shadow: 0 20px 45px rgba(2,8,20,.12), 0 3px 10px rgba(2,8,20,.06);
     }
-
     .actions{ gap:.5rem; display:flex; flex-wrap:wrap; }
 
-    /* KPI cards */
     .kpi{ background:#fff; border-radius:1rem; padding:1rem; height:100%; position:relative; overflow:hidden; }
     .kpi .label{ font-size:.9rem; color:#6b7280; }
     .kpi .value{ font-size:1.6rem; font-weight:700; line-height:1.2; }
@@ -269,15 +273,11 @@ $stmtHist->close();
       content:""; position:absolute; right:-30px; top:-30px; width:120px; height:120px;
       background: radial-gradient(60px 60px at 60px 60px, rgba(13,110,253,.12), transparent 60%);
     }
-    .kpi-danger { box-shadow:0 8px 24px rgba(220,38,38,.08); }
     .kpi-warning{ box-shadow:0 8px 24px rgba(234,179,8,.08); }
-    .kpi-ok     { box-shadow:0 8px 24px rgba(34,197,94,.08); }
+    .kpi-ok{ box-shadow:0 8px 24px rgba(34,197,94,.08); }
 
-    /* Chips del resumen */
     .chip{ display:inline-block; border:1px solid rgba(0,0,0,.08); background:#fff; border-radius:999px; padding:.3rem .7rem; margin:.2rem; font-size:.9rem }
     .chip b{ font-weight:600 }
-
-    /* Modal acuse */
     #acuseFrame{ width:100%; height:70vh; border:0; }
     #acuseSpinner{ height:70vh; }
   </style>
@@ -294,71 +294,22 @@ $stmtHist->close();
 
   <?= $mensaje ?>
 
-  <!-- =========================== KPI CARDS =========================== -->
   <?php
     $kpi_pend = count($pendRows);
-    $sla = 3; // umbral para KPI >= 3 días (ajustable)
+    $sla = 3;
     $class_ge3 = $kpi_ge3 > 0 ? 'kpi-warning' : 'kpi-ok';
     $class_max = $kpi_max >= $sla ? 'kpi-warning' : 'kpi-ok';
     $rej_text  = ($kpi_rej_pct === null) ? 'Sin datos' : (n1($kpi_rej_pct) . '%');
   ?>
   <div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
-      <div class="kpi">
-        <div class="label">Pendientes (traspasos)</div>
-        <div class="value"><?= n0($kpi_pend) ?></div>
-        <div class="hint">Salientes esperando recepción</div>
-      </div>
-    </div>
-    <div class="col-6 col-md-3">
-      <div class="kpi">
-        <div class="label">Piezas en tránsito</div>
-        <div class="value"><?= n0($kpi_piezas) ?></div>
-        <div class="hint">Equipos dentro de pendientes</div>
-      </div>
-    </div>
-    <div class="col-6 col-md-3">
-      <div class="kpi <?= $class_max ?>">
-        <div class="label">Antigüedad máx</div>
-        <div class="value"><?= n0($kpi_max) ?> d</div>
-        <div class="hint">Desde el envío más antiguo</div>
-      </div>
-    </div>
-    <div class="col-6 col-md-3">
-      <div class="kpi">
-        <div class="label">Promedio en tránsito</div>
-        <div class="value"><?= n1($kpi_avg) ?> d</div>
-        <div class="hint">Días promedio de espera</div>
-      </div>
-    </div>
-    <div class="col-6 col-md-3">
-      <div class="kpi <?= $class_ge3 ?>">
-        <div class="label">Pendientes ≥ <?= $sla ?> días</div>
-        <div class="value"><?= n0($kpi_ge3) ?></div>
-        <div class="hint">Sugerido: dar seguimiento</div>
-      </div>
-    </div>
-    <div class="col-6 col-md-3">
-      <div class="kpi">
-        <div class="label">Enviados (últimos 7 días)</div>
-        <div class="value"><?= n0($kpi_7d) ?></div>
-        <div class="hint">Actividad reciente</div>
-      </div>
-    </div>
-    <div class="col-6 col-md-3">
-      <div class="kpi">
-        <div class="label">Enviados (mes)</div>
-        <div class="value"><?= n0($kpi_mtd) ?></div>
-        <div class="hint">Mes en curso</div>
-      </div>
-    </div>
-    <div class="col-6 col-md-3">
-      <div class="kpi">
-        <div class="label">Tasa de rechazo (mes)</div>
-        <div class="value"><?= h($rej_text) ?></div>
-        <div class="hint">De piezas procesadas</div>
-      </div>
-    </div>
+    <div class="col-6 col-md-3"><div class="kpi"><div class="label">Pendientes (traspasos)</div><div class="value"><?= n0($kpi_pend) ?></div><div class="hint">Salientes esperando recepción</div></div></div>
+    <div class="col-6 col-md-3"><div class="kpi"><div class="label">Piezas en tránsito</div><div class="value"><?= n0($kpi_piezas) ?></div><div class="hint">Equipos dentro de pendientes</div></div></div>
+    <div class="col-6 col-md-3"><div class="kpi <?= $class_max ?>"><div class="label">Antigüedad máx</div><div class="value"><?= n0($kpi_max) ?> d</div><div class="hint">Desde el envío más antiguo</div></div></div>
+    <div class="col-6 col-md-3"><div class="kpi"><div class="label">Promedio en tránsito</div><div class="value"><?= n1($kpi_avg) ?> d</div><div class="hint">Días promedio de espera</div></div></div>
+    <div class="col-6 col-md-3"><div class="kpi <?= $class_ge3 ?>"><div class="label">Pendientes ≥ <?= $sla ?> días</div><div class="value"><?= n0($kpi_ge3) ?></div><div class="hint">Sugerido: dar seguimiento</div></div></div>
+    <div class="col-6 col-md-3"><div class="kpi"><div class="label">Enviados (últimos 7 días)</div><div class="value"><?= n0($kpi_7d) ?></div><div class="hint">Actividad reciente</div></div></div>
+    <div class="col-6 col-md-3"><div class="kpi"><div class="label">Enviados (mes)</div><div class="value"><?= n0($kpi_mtd) ?></div><div class="hint">Mes en curso</div></div></div>
+    <div class="col-6 col-md-3"><div class="kpi"><div class="label">Tasa de rechazo (mes)</div><div class="value"><?= h($rej_text) ?></div><div class="hint">De piezas procesadas</div></div></div>
   </div>
 
   <!-- =========================== TABS =========================== -->
@@ -379,7 +330,6 @@ $stmtHist->close();
           <?php
           $idTraspaso = (int)$traspaso['id'];
 
-          // Resumen compacto por modelo/color/capacidad
           $resumen = $conn->query("
             SELECT p.marca, p.modelo, p.color, COALESCE(p.capacidad,'') AS capacidad, COUNT(*) AS piezas
             FROM detalle_traspaso dt
@@ -390,7 +340,6 @@ $stmtHist->close();
             ORDER BY p.marca, p.modelo, p.color, p.capacidad
           ");
 
-          // Detalle completo (se muestra colapsado)
           $detalles = $conn->query("
               SELECT i.id, p.marca, p.modelo, p.color, p.capacidad, p.imei1, p.imei2
               FROM detalle_traspaso dt
@@ -400,7 +349,6 @@ $stmtHist->close();
               ORDER BY p.marca, p.modelo, i.id
           ");
 
-          // Total piezas (rápido usando resumen)
           $totalPzas = 0;
           $resumenRows = [];
           while($rx = $resumen->fetch_assoc()){ $totalPzas += (int)$rx['piezas']; $resumenRows[]=$rx; }
@@ -423,7 +371,6 @@ $stmtHist->close();
             </div>
 
             <div class="card-body">
-              <!-- Resumen compacto (chips) -->
               <?php if (!empty($resumenRows)): ?>
                 <div class="mb-2">
                   <?php foreach ($resumenRows as $rx): ?>
@@ -438,12 +385,8 @@ $stmtHist->close();
                 </div>
               <?php endif; ?>
 
-              <!-- Botón para expandir/colapsar detalle -->
-              <a class="btn btn-link" data-bs-toggle="collapse" href="#<?= $collapseId ?>">
-                🔍 Ver detalle
-              </a>
+              <a class="btn btn-link" data-bs-toggle="collapse" href="#<?= $collapseId ?>">🔍 Ver detalle</a>
 
-              <!-- Detalle colapsable -->
               <div id="<?= $collapseId ?>" class="collapse mt-2">
                 <div class="table-responsive">
                   <table class="table table-striped table-bordered table-sm mb-0">
@@ -475,17 +418,17 @@ $stmtHist->close();
             <div class="card-footer d-flex justify-content-between align-items-center flex-wrap gap-2">
               <span class="text-muted">Esperando confirmación de <b><?= h($traspaso['sucursal_destino']) ?></b>…</span>
               <div class="actions">
-                <!-- 🖨️ Reimprimir acuse (abre modal) -->
                 <button type="button" class="btn btn-sm btn-outline-secondary btn-acuse" data-id="<?= $idTraspaso ?>">
                   🖨️ Reimprimir acuse
                 </button>
 
-                <!-- 🗑️ Eliminar -->
+                <?php if ($isAdmin): ?>
                 <form method="POST" action="eliminar_traspaso.php"
-                      onsubmit="return confirm('¿Eliminar este traspaso? Esta acción no se puede deshacer.')">
+                      onsubmit="return confirm('¿Eliminar este traspaso? Esta acción no se puede deshacer.');">
                   <input type="hidden" name="id_traspaso" value="<?= $idTraspaso ?>">
                   <button type="submit" class="btn btn-sm btn-danger">🗑️ Eliminar Traspaso</button>
                 </form>
+                <?php endif; ?>
               </div>
             </div>
           </div>
@@ -538,7 +481,7 @@ $stmtHist->close();
           <?php
           $idT = (int)$h['id'];
 
-          // Conteos del detalle (si hay columnas de resultado)
+          // Conteo de piezas
           $total = $rec = $rej = null;
           if ($hasDT_Resultado) {
             $q = $conn->prepare("
@@ -564,7 +507,7 @@ $stmtHist->close();
             $q->close();
           }
 
-          // Color de estatus
+          // Badge por estatus
           $badge = 'bg-secondary';
           if ($h['estatus']==='Completado') $badge='bg-success';
           elseif ($h['estatus']==='Parcial') $badge='bg-warning text-dark';
@@ -572,6 +515,7 @@ $stmtHist->close();
           elseif ($h['estatus']==='Pendiente') $badge='bg-info text-dark';
 
           $collapseIdH = "det_hist_" . $idT;
+          $esPendiente = (strcasecmp((string)$h['estatus'], 'Pendiente') === 0);
           ?>
           <div class="card mb-3">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -602,7 +546,6 @@ $stmtHist->close();
                 </div>
               </div>
 
-              <!-- Detalle colapsable -->
               <a class="btn btn-link mt-2" data-bs-toggle="collapse" href="#<?= $collapseIdH ?>">🔍 Ver detalle</a>
               <div id="<?= $collapseIdH ?>" class="collapse mt-2">
               <?php
@@ -652,10 +595,17 @@ $stmtHist->close();
             </div>
             <div class="card-footer d-flex justify-content-end">
               <div class="actions">
-                <!-- 🖨️ Reimprimir acuse (abre modal) -->
                 <button type="button" class="btn btn-sm btn-outline-secondary btn-acuse" data-id="<?= $idT ?>">
                   🖨️ Reimprimir acuse
                 </button>
+
+                <?php if ($isAdmin && $esPendiente): ?>
+                <form method="POST" action="eliminar_traspaso.php"
+                      onsubmit="localStorage.setItem('ts_activeTab','#tab-historico'); return confirm('¿Eliminar este traspaso pendiente?');">
+                  <input type="hidden" name="id_traspaso" value="<?= $idT ?>">
+                  <button type="submit" class="btn btn-sm btn-danger">🗑️ Eliminar Traspaso</button>
+                </form>
+                <?php endif; ?>
               </div>
             </div>
           </div>
@@ -693,7 +643,6 @@ $stmtHist->close();
 <!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script> -->
 
 <script>
-// Modal + iframe loader + persistencia de pestaña
 (function(){
   const acuseModalEl = document.getElementById('acuseModal');
   const acuseModal   = new bootstrap.Modal(acuseModalEl);
@@ -701,7 +650,6 @@ $stmtHist->close();
   const spinner      = document.getElementById('acuseSpinner');
   const btnPrint     = document.getElementById('btnPrintAcuse');
 
-  // Abrir modal y cargar acuse en iframe
   document.querySelectorAll('.btn-acuse').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const id = btn.dataset.id;
@@ -712,13 +660,11 @@ $stmtHist->close();
     });
   });
 
-  // Quitar spinner cuando cargue el iframe
   frame.addEventListener('load', ()=>{
     spinner.classList.add('d-none');
     frame.classList.remove('d-none');
   });
 
-  // Imprimir contenido del iframe
   btnPrint.addEventListener('click', ()=>{
     try{
       if (frame && frame.contentWindow) {
@@ -730,14 +676,13 @@ $stmtHist->close();
     }
   });
 
-  // Limpiar src al cerrar para liberar memoria (opcional)
   acuseModalEl.addEventListener('hidden.bs.modal', ()=>{
     frame.src = 'about:blank';
     spinner.classList.remove('d-none');
     frame.classList.add('d-none');
   });
 
-  // Guardar/restaurar pestaña activa (UX nice-to-have)
+  // Persistir pestaña activa
   const tabsEl = document.getElementById('tabTraspasos');
   if (tabsEl) {
     const stored = localStorage.getItem('ts_activeTab');

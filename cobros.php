@@ -22,6 +22,17 @@ if (empty($_SESSION['cobro_token'])) {
 }
 
 /* ===========================
+   Helpers
+   =========================== */
+function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+function column_exists(mysqli $conn, string $table, string $column): bool {
+    $t = $conn->real_escape_string($table);
+    $c = $conn->real_escape_string($column);
+    $rs = $conn->query("SHOW COLUMNS FROM `$t` LIKE '$c'");
+    return $rs && $rs->num_rows > 0;
+}
+
+/* ===========================
    Nombre de la sucursal
    =========================== */
 $nombre_sucursal = "Sucursal #$id_sucursal";
@@ -56,6 +67,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $monto_efectivo = (float)($_POST['monto_efectivo'] ?? 0);
         $monto_tarjeta  = (float)($_POST['monto_tarjeta'] ?? 0);
 
+        // Datos de cliente (solo Innovación Móvil; vienen del modal)
+        $nombre_cliente   = trim($_POST['nombre_cliente']   ?? '');
+        $telefono_cliente = trim($_POST['telefono_cliente'] ?? '');
+
         // Redondeo seguro
         $monto_total    = round($monto_total, 2);
         $monto_efectivo = round($monto_efectivo, 2);
@@ -79,44 +94,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $monto_tarjeta  = 0.00;
         }
 
-        // Comisión especial: SIEMPRE para Abono PayJoy/Krediya (independiente del tipo de pago)
+        // Comisión especial alineada a LUGA:
+        // SOLO para Abono PayJoy/Krediya y NO aplica si el pago es Tarjeta.
         $esAbono = in_array($motivo, ['Abono PayJoy','Abono Krediya'], true);
-        $comision_especial = $esAbono ? 10.00 : 0.00;
+        $comision_especial = ($esAbono && $tipo_pago !== 'Tarjeta') ? 10.00 : 0.00;
+
+        // Reglas de Innovación Móvil
+        $motivosInnovacion = ['Enganche Innovacion Movil','Pago Innovacion Movil'];
+        $esInnovacion = in_array($motivo, $motivosInnovacion, true);
 
         if ($motivo === '' || $tipo_pago === '' || $monto_total <= 0) {
             $msg = "<div class='alert alert-warning mb-3'>⚠ Debes llenar todos los campos obligatorios.</div>";
         } else {
-            // Valida coherencia tras normalizar
-            $valido = false;
-            if ($tipo_pago === 'Efectivo' && abs($monto_efectivo - $monto_total) < 0.01) $valido = true;
-            if ($tipo_pago === 'Tarjeta'  && abs($monto_tarjeta  - $monto_total) < 0.01) $valido = true;
-            if ($tipo_pago === 'Mixto'    && abs(($monto_efectivo + $monto_tarjeta) - $monto_total) < 0.01) $valido = true;
-
-            if (!$valido) {
-                $msg = "<div class='alert alert-danger mb-3'>⚠ Los montos no cuadran con el tipo de pago seleccionado.</div>";
+            // Si es Innovación Móvil, exige datos de cliente
+            if ($esInnovacion && ($nombre_cliente === '' || $telefono_cliente === '')) {
+                $msg = "<div class='alert alert-warning mb-3'>⚠ Para $motivo debes capturar nombre y teléfono del cliente.</div>";
             } else {
-                $stmt = $conn->prepare("
-                    INSERT INTO cobros (
-                        id_usuario, id_sucursal, motivo, tipo_pago,
-                        monto_total, monto_efectivo, monto_tarjeta, comision_especial,
-                        fecha_cobro, id_corte, corte_generado
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NULL, 0)
-                ");
-                $stmt->bind_param(
-                    "iissdddd",
-                    $id_usuario, $id_sucursal, $motivo, $tipo_pago,
-                    $monto_total, $monto_efectivo, $monto_tarjeta, $comision_especial
-                );
-                if ($stmt->execute()) {
-                    $msg = "<div class='alert alert-success mb-3'>✅ Cobro registrado correctamente.</div>";
-                    // Regenera token para impedir re-envío del mismo POST
-                    $_SESSION['cobro_token'] = bin2hex(random_bytes(16));
-                    // Limpia POST para no repoblar inputs
-                    $_POST = [];
+                // Valida coherencia tras normalizar
+                $valido = false;
+                if ($tipo_pago === 'Efectivo' && abs($monto_efectivo - $monto_total) < 0.01) $valido = true;
+                if ($tipo_pago === 'Tarjeta'  && abs($monto_tarjeta  - $monto_total) < 0.01) $valido = true;
+                if ($tipo_pago === 'Mixto'    && abs(($monto_efectivo + $monto_tarjeta) - $monto_total) < 0.01) $valido = true;
+
+                if (!$valido) {
+                    $msg = "<div class='alert alert-danger mb-3'>⚠ Los montos no cuadran con el tipo de pago seleccionado.</div>";
                 } else {
-                    $msg = "<div class='alert alert-danger mb-3'>❌ Error al registrar cobro.</div>";
+                    // Inserción robusta: incluye nombre/telefono si esas columnas existen
+                    $hasNombre = column_exists($conn, 'cobros', 'nombre_cliente');
+                    $hasTel    = column_exists($conn, 'cobros', 'telefono_cliente');
+
+                    $cols = "id_usuario, id_sucursal, motivo, tipo_pago, monto_total, monto_efectivo, monto_tarjeta, comision_especial";
+                    $vals = "?, ?, ?, ?, ?, ?, ?, ?";
+                    $types = "iissdddd";
+                    $bind  = [$id_usuario, $id_sucursal, $motivo, $tipo_pago, $monto_total, $monto_efectivo, $monto_tarjeta, $comision_especial];
+
+                    if ($hasNombre) { $cols .= ", nombre_cliente"; $vals .= ", ?"; $types .= "s"; $bind[] = $nombre_cliente; }
+                    if ($hasTel)    { $cols .= ", telefono_cliente"; $vals .= ", ?"; $types .= "s"; $bind[] = $telefono_cliente; }
+
+                    $sql = "INSERT INTO cobros ($cols, fecha_cobro, id_corte, corte_generado) VALUES ($vals, NOW(), NULL, 0)";
+                    $stmt = $conn->prepare($sql);
+                    if (!$stmt) {
+                        $msg = "<div class='alert alert-danger mb-3'>❌ Error al preparar INSERT.</div>";
+                    } else {
+                        // bind dinámico
+                        $stmt->bind_param($types, ...$bind);
+                        if ($stmt->execute()) {
+                            $msg = "<div class='alert alert-success mb-3'>✅ Cobro registrado correctamente.</div>";
+                            // Regenera token para impedir re-envío del mismo POST
+                            $_SESSION['cobro_token'] = bin2hex(random_bytes(16));
+                            // Limpia POST para no repoblar inputs
+                            $_POST = [];
+                        } else {
+                            $msg = "<div class='alert alert-danger mb-3'>❌ Error al registrar cobro.</div>";
+                        }
+                        $stmt->close();
+                    }
                 }
-                $stmt->close();
             }
         }
     }
@@ -157,7 +190,7 @@ try {
     }
     $stmt->close();
 } catch (Throwable $e) {
-    // Si hay error, dejamos la tabla vacía silenciosamente
+    // Silencioso para vista
 }
 ?>
 <!DOCTYPE html>
@@ -199,7 +232,7 @@ try {
       <div class="me-3" style="font-size:2rem"><i class="bi bi-cash-coin"></i></div>
       <div>
         <h2 class="h3 mb-0">Registrar Cobro</h2>
-        <div class="opacity-75">Captura rápida y validada • <?= htmlspecialchars($nombre_sucursal, ENT_QUOTES, 'UTF-8') ?></div>
+        <div class="opacity-75">Captura rápida y validada • <?= h($nombre_sucursal) ?></div>
       </div>
     </div>
   </div>
@@ -210,7 +243,11 @@ try {
     <!-- Columna izquierda: formulario -->
     <div class="col-12 col-lg-7">
       <form method="POST" class="card card-soft p-3 p-md-4" id="formCobro" novalidate>
-        <input type="hidden" name="cobro_token" value="<?= htmlspecialchars($_SESSION['cobro_token'], ENT_QUOTES, 'UTF-8') ?>">
+        <input type="hidden" name="cobro_token" value="<?= h($_SESSION['cobro_token']) ?>">
+
+        <!-- hidden para datos de cliente (los llena el modal si aplica) -->
+        <input type="hidden" name="nombre_cliente" id="nombre_cliente_hidden">
+        <input type="hidden" name="telefono_cliente" id="telefono_cliente_hidden">
 
         <!-- Motivo -->
         <div class="mb-3">
@@ -219,15 +256,27 @@ try {
             <option value="">-- Selecciona --</option>
             <?php
               $motivoSel = $_POST['motivo'] ?? '';
-              foreach (['Enganche','Equipo de contado','Venta SIM','Recarga Tiempo Aire','Abono PayJoy','Abono Krediya'] as $m) {
+              $motivos = [
+                'Enganche',
+                'Equipo de contado',
+                'Venta SIM',
+                'Recarga Tiempo Aire',
+                'Abono PayJoy',
+                'Abono Krediya',
+                // Ajustes de Innovación Móvil + pospago
+                'Pago inicial Pospago',
+                'Enganche Innovacion Movil',
+                'Pago Innovacion Movil',
+              ];
+              foreach ($motivos as $m) {
                   $sel = ($motivoSel === $m) ? 'selected' : '';
-                  echo "<option $sel>".htmlspecialchars($m, ENT_QUOTES, 'UTF-8')."</option>";
+                  echo "<option $sel>".h($m)."</option>";
               }
             ?>
           </select>
           <div class="form-help">
-            Para <strong>Abono PayJoy/Krediya</strong> se suma comisión especial automática
-            <em>(aplica para cualquier tipo de pago)</em>.
+            Para <strong>Abono PayJoy/Krediya</strong> la comisión especial se agrega
+            <em>solo si el pago no es con tarjeta</em>.
           </div>
         </div>
 
@@ -242,7 +291,7 @@ try {
                   $opts = [''=>'-- Selecciona --','Efectivo'=>'Efectivo','Tarjeta'=>'Tarjeta','Mixto'=>'Mixto'];
                   foreach ($opts as $val=>$txt){
                     $sel = ($tipoSel === $val) ? 'selected' : '';
-                    echo "<option value='".htmlspecialchars($val,ENT_QUOTES)."' $sel>".htmlspecialchars($txt,ENT_QUOTES)."</option>";
+                    echo "<option value='".h($val)."' $sel>".h($txt)."</option>";
                   }
                 ?>
               </select>
@@ -252,7 +301,7 @@ try {
                 <span class="input-group-text currency-prefix">$</span>
                 <input type="number" step="0.01" min="0" name="monto_total" id="monto_total"
                        class="form-control" placeholder="0.00" required
-                       value="<?= htmlspecialchars((string)($_POST['monto_total'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                       value="<?= h((string)($_POST['monto_total'] ?? '')) ?>">
               </div>
               <div class="form-help">Monto total del cobro.</div>
             </div>
@@ -267,7 +316,7 @@ try {
               <span class="input-group-text currency-prefix">$</span>
               <input type="number" step="0.01" min="0" name="monto_efectivo" id="monto_efectivo"
                      class="form-control" placeholder="0.00"
-                     value="<?= htmlspecialchars((string)($_POST['monto_efectivo'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                     value="<?= h((string)($_POST['monto_efectivo'] ?? '')) ?>">
             </div>
           </div>
 
@@ -277,7 +326,7 @@ try {
               <span class="input-group-text currency-prefix">$</span>
               <input type="number" step="0.01" min="0" name="monto_tarjeta" id="monto_tarjeta"
                      class="form-control" placeholder="0.00"
-                     value="<?= htmlspecialchars((string)($_POST['monto_tarjeta'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                     value="<?= h((string)($_POST['monto_tarjeta'] ?? '')) ?>">
             </div>
           </div>
         </div>
@@ -288,7 +337,7 @@ try {
 
         <div class="sticky-actions">
           <div class="d-grid mt-3">
-            <button type="submit" class="btn btn-success btn-lg"
+            <button type="submit" class="btn btn-success btn-lg" id="btnGuardar"
                     <?= $lock ? 'disabled' : '' ?>><i class="bi bi-save me-2"></i>Guardar Cobro</button>
           </div>
           <?php if ($lock): ?>
@@ -325,7 +374,7 @@ try {
   <div class="card card-soft p-3 p-md-4 mt-4">
     <div class="d-flex flex-wrap align-items-center justify-content-between mb-3">
       <h5 class="mb-2 mb-sm-0">
-        Cobros de hoy — <span class="badge badge-soft"><?= htmlspecialchars($nombre_sucursal, ENT_QUOTES, 'UTF-8') ?></span>
+        Cobros de hoy — <span class="badge badge-soft"><?= h($nombre_sucursal) ?></span>
       </h5>
       <div class="d-flex gap-2">
         <input type="text" id="filtroTabla" class="form-control" placeholder="Buscar en tabla (motivo, usuario, tipo)" />
@@ -352,10 +401,10 @@ try {
           <?php else: ?>
             <?php foreach ($cobros_hoy as $r): ?>
               <tr>
-                <td><?= htmlspecialchars((new DateTime($r['fecha_cobro']))->format('H:i')) ?></td>
-                <td><?= htmlspecialchars($r['usuario'] ?? '') ?></td>
-                <td><?= htmlspecialchars($r['motivo'] ?? '') ?></td>
-                <td><?= htmlspecialchars($r['tipo_pago'] ?? '') ?></td>
+                <td><?= h((new DateTime($r['fecha_cobro']))->format('H:i')) ?></td>
+                <td><?= h($r['usuario'] ?? '') ?></td>
+                <td><?= h($r['motivo'] ?? '') ?></td>
+                <td><?= h($r['tipo_pago'] ?? '') ?></td>
                 <td class="text-end"><?= number_format((float)$r['monto_total'], 2) ?></td>
                 <td class="text-end"><?= number_format((float)$r['monto_efectivo'], 2) ?></td>
                 <td class="text-end"><?= number_format((float)$r['monto_tarjeta'], 2) ?></td>
@@ -377,18 +426,25 @@ try {
         <?php endif; ?>
       </table>
     </div>
-    <div class="small text-muted">Ventana: hoy <?= htmlspecialchars((new DateTime('today', $tz))->format('d/m/Y')) ?> — registros más recientes primero (máx. 100).</div>
+    <div class="small text-muted">Ventana: hoy <?= h((new DateTime('today', $tz))->format('d/m/Y')) ?> — registros más recientes primero (máx. 100).</div>
   </div>
 
 </div>
 
 <!-- JS -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<!-- Bootstrap bundle solo para el modal de datos de cliente -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 (function(){
-  // === Lógica de formulario (resumen + validación) ===
-  const $motivo=$("#motivo"),$tipo=$("#tipo_pago"),$total=$("#monto_total"),$efectivo=$("#monto_efectivo"),$tarjeta=$("#monto_tarjeta");
+  const $motivo=$("#motivo"),
+        $tipo=$("#tipo_pago"),
+        $total=$("#monto_total"),
+        $efectivo=$("#monto_efectivo"),
+        $tarjeta=$("#monto_tarjeta");
+
   const fmt=n=>"$"+(isFinite(n)?Number(n):0).toFixed(2);
+  const motivosInnovacion = new Set(['Enganche Innovacion Movil','Pago Innovacion Movil']);
 
   function toggleCampos(){
     const t=$tipo.val();
@@ -417,8 +473,8 @@ try {
     validar();
   }
 
-  // Comisión especial: SIEMPRE que sea Abono PayJoy/Krediya (sin importar tipo de pago)
-  function comisionEspecial(m){ return (m==="Abono PayJoy"||m==="Abono Krediya") ? 10 : 0; }
+  // Comisión especial alineada a LUGA (no aplica si pago con tarjeta)
+  function comisionEspecial(m,t){ return ((m==="Abono PayJoy"||m==="Abono Krediya") && t!=="Tarjeta") ? 10 : 0; }
 
   function validar(){
     const m=($motivo.val()||"").trim(),
@@ -426,7 +482,7 @@ try {
           tot=parseFloat($total.val()||0)||0,
           ef=parseFloat($efectivo.val()||0)||0,
           tj=parseFloat($tarjeta.val()||0)||0,
-          com=comisionEspecial(m);
+          com=comisionEspecial(m,t);
 
     $("#r_motivo").text(m||"—");
     $("#r_tipo").text(t||"—");
@@ -463,7 +519,62 @@ try {
       $(this).toggle(t.indexOf(q) !== -1);
     });
   });
+
+  // ==== Modal de datos de cliente para Innovación Móvil ====
+  const btnGuardar = document.getElementById('btnGuardar');
+  btnGuardar.addEventListener('click', function(ev){
+    const motivo = ($motivo.val() || '').trim();
+    if (motivosInnovacion.has(motivo)) {
+      const tieneDatos = (document.getElementById('nombre_cliente_hidden').value.trim() !== '' &&
+                          document.getElementById('telefono_cliente_hidden').value.trim() !== '');
+      if (!tieneDatos) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        new bootstrap.Modal(document.getElementById('clienteModal')).show();
+      }
+    }
+  });
+
+  document.getElementById('btnGuardarCliente').addEventListener('click', function(){
+    const n = document.getElementById('nombre_cliente_modal').value.trim();
+    const t = document.getElementById('telefono_cliente_modal').value.trim();
+    if (n.length < 3) { alert('Nombre del cliente inválido.'); return; }
+    if (t.length < 8) { alert('Teléfono del cliente inválido.'); return; }
+    document.getElementById('nombre_cliente_hidden').value = n;
+    document.getElementById('telefono_cliente_hidden').value = t;
+    bootstrap.Modal.getInstance(document.getElementById('clienteModal')).hide();
+    document.getElementById('formCobro').submit();
+  });
+
 })();
 </script>
+
+<!-- Modal Datos del Cliente (solo Innovación Móvil) -->
+<div class="modal fade" id="clienteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-person-vcard me-2"></i>Datos del cliente</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Nombre del cliente</label>
+          <input type="text" class="form-control" id="nombre_cliente_modal" maxlength="120" placeholder="Nombre y apellidos">
+        </div>
+        <div class="mb-1">
+          <label class="form-label">Teléfono del cliente</label>
+          <input type="tel" class="form-control" id="telefono_cliente_modal" maxlength="25" placeholder="10 dígitos">
+        </div>
+        <div class="small text-muted">Estos datos quedarán ligados al cobro para Innovación Móvil.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" id="btnGuardarCliente"><i class="bi bi-check2-circle me-1"></i>Continuar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

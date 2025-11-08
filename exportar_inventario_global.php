@@ -1,7 +1,6 @@
 <?php
 // exportar_inventario_global.php — Export HTML->Excel del Inventario Global
-// Ajustes: columna "Cantidad" (1 equipos, acumulado accesorios por sucursal+producto)
-//          agrega filtro "modelo" y permite rol Logistica como en la vista.
+// Ajuste: "Cantidad" viene directo de BD: inventario.cantidad (sin conteos manuales)
 
 session_start();
 if (!isset($_SESSION['id_usuario'])) {
@@ -24,7 +23,7 @@ $filtroEstatus    = $_GET['estatus']     ?? '';
 $filtroAntiguedad = $_GET['antiguedad']  ?? '';
 $filtroPrecioMin  = $_GET['precio_min']  ?? '';
 $filtroPrecioMax  = $_GET['precio_max']  ?? '';
-$filtroModelo     = $_GET['modelo']      ?? ''; // NUEVO
+$filtroModelo     = $_GET['modelo']      ?? ''; // coincide con la vista
 
 /* ===== Obtener columnas reales de productos (en orden) ===== */
 $cols = [];
@@ -43,7 +42,7 @@ function codigo_fallback_from_row($row) {
         $row['modelo'] ?? '',
         $row['color'] ?? '',
         $row['capacidad'] ?? ''
-    ], fn($x) => $x !== '');
+    ], fn($x) => $x !== '' && $x !== null);
     if (!$partes) return '-';
     $code = strtoupper(implode('-', $partes));
     return preg_replace('/\s+/', '', $code);
@@ -52,17 +51,18 @@ function codigo_fallback_from_row($row) {
 /* ===== Consulta ===== */
 $sql = "
     SELECT
-        i.id AS id_inventario,
-        s.id AS id_sucursal,
-        s.nombre AS sucursal,
-        p.*,  -- todas las columnas de productos
+        i.id          AS id_inventario,
+        i.cantidad    AS cantidad,             -- << CANTIDAD desde BD
+        s.id          AS id_sucursal,
+        s.nombre      AS sucursal,
+        p.*,                                     -- todas las columnas de productos (incluye p.id)
         COALESCE(p.costo_con_iva, p.costo, 0) AS costo_mostrar,
         (p.precio_lista - COALESCE(p.costo_con_iva, p.costo, 0)) AS profit,
-        i.estatus AS estatus_inventario,
+        i.estatus     AS estatus_inventario,
         i.fecha_ingreso,
         TIMESTAMPDIFF(DAY, i.fecha_ingreso, NOW()) AS antiguedad_dias
     FROM inventario i
-    INNER JOIN productos p ON p.id = i.id_producto
+    INNER JOIN productos  p ON p.id = i.id_producto
     INNER JOIN sucursales s ON s.id = i.id_sucursal
     WHERE i.estatus IN ('Disponible','En tránsito')
 ";
@@ -81,7 +81,7 @@ if ($filtroImei !== '') {
     $params[] = $like; $params[] = $like;
     $types .= "ss";
 }
-if ($filtroModelo !== '') {            // NUEVO: coincide con la vista
+if ($filtroModelo !== '') {
     $sql .= " AND p.modelo LIKE ?";
     $params[] = "%$filtroModelo%";
     $types .= "s";
@@ -118,22 +118,12 @@ if (!empty($params)) {
 $stmt->execute();
 $res = $stmt->get_result();
 
-/* ===== Preparar acumulados para "Cantidad" en accesorios =====
-   Regla: equipos = 1 por fila; accesorios = total por (sucursal + id_producto)
-   Para eso construimos un mapa $accCounts antes de renderizar.
-*/
+/* ===== Carga de filas (ya no hay conteo manual de accesorios) ===== */
 $rows = [];
-$accCounts = []; // $accCounts[$id_sucursal][$id_producto] = cantidad
 while ($r = $res->fetch_assoc()) {
+    // normaliza cantidad a mínimo 1 por seguridad
+    $r['cantidad'] = max(1, (int)($r['cantidad'] ?? 1));
     $rows[] = $r;
-    $esAcc = (strcasecmp((string)($r['tipo_producto'] ?? ''), 'Accesorio') === 0);
-    if ($esAcc) {
-        $sid = (int)$r['id_sucursal'];
-        $pid = (int)$r['id']; // OJO: p.* trae p.id, que quedó en $r['id']
-        if (!isset($accCounts[$sid])) $accCounts[$sid] = [];
-        if (!isset($accCounts[$sid][$pid])) $accCounts[$sid][$pid] = 0;
-        $accCounts[$sid][$pid]++;
-    }
 }
 
 /* ===== Cabeceras: Excel abre HTML como libro ===== */
@@ -161,7 +151,7 @@ foreach ($cols as $col) {
     }
 }
 echo "<td>Profit</td>";
-echo "<td>Cantidad</td>"; // NUEVO
+echo "<td>Cantidad</td>"; // ahora directo de inventario.cantidad
 echo "<td>Estatus Inventario</td>";
 echo "<td>Fecha Ingreso</td>";
 echo "<td>Antigüedad (días)</td>";
@@ -185,7 +175,7 @@ foreach ($rows as $row) {
             continue;
         }
         if ($col === 'imei1' || $col === 'imei2') {
-            // Prefijo ' para evitar truncamiento en Excel
+            // Prefijo ' para que Excel no recorte ni formatee
             echo "<td>'".h($val === '' ? '-' : $val)."'</td>";
             continue;
         }
@@ -197,19 +187,11 @@ foreach ($rows as $row) {
         echo "<td>".h($val)."</td>";
     }
 
-    // Profit calculado con costo_con_iva (fallback a costo)
+    // Profit calculado (usa costo_con_iva con fallback a costo)
     echo "<td>".nf($row['profit'])."</td>";
 
-    // Cantidad: 1 para equipo; total acumulado para accesorio (x sucursal+producto)
-    $esAcc = (strcasecmp((string)($row['tipo_producto'] ?? ''), 'Accesorio') === 0);
-    if ($esAcc) {
-        $sid = (int)$row['id_sucursal'];
-        $pid = (int)$row['id']; // p.id dentro de p.*
-        $cantidad = $accCounts[$sid][$pid] ?? 1;
-    } else {
-        $cantidad = 1;
-    }
-    echo "<td>".(int)$cantidad."</td>";
+    // Cantidad directo de BD (mínimo 1 ya normalizado)
+    echo "<td>".(int)$row['cantidad']."</td>";
 
     echo "<td>".h($row['estatus_inventario'])."</td>";
     echo "<td>".h($row['fecha_ingreso'])."</td>";

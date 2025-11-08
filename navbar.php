@@ -228,10 +228,10 @@ $grpInventario = [
 $grpCompras    = ['compras_nueva.php', 'compras_resumen.php', 'modelos.php', 'proveedores.php', 'compras_ingreso.php'];
 $grpTraspasos  = ['generar_traspaso.php', 'generar_traspaso_sims.php', 'traspasos_sims_pendientes.php', 'traspasos_sims_salientes.php', 'traspasos_pendientes.php', 'traspasos_salientes.php', 'traspaso_nuevo.php'];
 $grpEfectivo   = ['cobros.php', 'cortes_caja.php', 'generar_corte.php', 'depositos_sucursal.php', 'depositos.php', 'recoleccion_comisiones.php'];
-$grpOperacion  = ['lista_precios.php', 'prospectos.php', 'insumos_pedido.php', 'insumos_admin.php', 'mantenimiento_solicitar.php', 'mantenimiento_admin.php', 'gestionar_usuarios.php', 'zona_asistencias.php', 'nomina_mi_semana.php'];
+$grpOperacion  = ['lista_precios.php', 'prospectos.php', 'insumos_pedido.php', 'insumos_admin.php', 'mantenimiento_solicitar.php', 'mantenimiento_admin.php', 'gestionar_usuarios.php', 'zona_asistencias.php', 'nomina_mi_semana.php', 'panel_operador.php'];
 $grpRH         = ['reporte_nomina.php', 'reporte_nomina_gerentes_zona.php', 'admin_expedientes.php', 'admin_asistencias.php', 'productividad_ejecutivo.php'];
 $grpOperativos = [
-  'tareas.php', // NEW
+  'tickets_nuevo.php',   // ← NUEVO (dejarlo arriba)
   'insumos_catalogo.php',
   'actualizar_precios_modelo.php',
   'cuotas_mensuales.php',
@@ -866,11 +866,18 @@ function item_active(string $f, string $c): string
           <ul class="dropdown-menu">
             <li><a class="dropdown-item <?= item_active('lista_precios.php', $current) ?>" href="lista_precios.php">Lista de precios</a></li>
 
+            <!-- Panel Operador: visible solo para Admin y Logística -->
+            <?php if (in_array($rolUsuario, ['Admin', 'Logistica'], true)): ?>
+              <li><a class="dropdown-item <?= item_active('panel_operador.php', $current) ?>" href="panel_operador.php">
+                  Panel Operador
+                </a></li>
+            <?php endif; ?>
+
             <?php if (in_array($rolUsuario, ['Gerente', 'Ejecutivo'], true) && $esSucursalPropia): ?>
               <li><a class="dropdown-item <?= item_active('nomina_mi_semana.php', $current) ?>" href="nomina_mi_semana.php">Mi nómina</a></li>
             <?php endif; ?>
 
-            <?php if (in_array($rolUsuario, ['Ejecutivo', 'Gerente'])): ?>
+            <?php if (in_array($rolUsuario, ['Ejecutivo', 'Gerente'], true)): ?>
               <li><a class="dropdown-item <?= item_active('prospectos.php', $current) ?>" href="prospectos.php">Prospectos</a></li>
             <?php endif; ?>
 
@@ -891,12 +898,12 @@ function item_active(string $f, string $c): string
               <li><a class="dropdown-item <?= item_active('zona_asistencias.php', $current) ?>" href="zona_asistencias.php"><i class="bi bi-people-fill me-1"></i>Asistencias de zona</a></li>
             <?php endif; ?>
 
-            <?php if (in_array($rolUsuario, ['Gerente', 'GerenteZona', 'GerenteSucursal', 'Admin', 'Super'])): ?>
+            <?php if (in_array($rolUsuario, ['Gerente', 'GerenteZona', 'GerenteSucursal', 'Admin', 'Super'], true)): ?>
               <li>
                 <hr class="dropdown-divider">
               </li>
               <li class="dropdown-header">Mantenimiento</li>
-              <?php if (in_array($rolUsuario, ['Gerente', 'GerenteZona', 'GerenteSucursal'])): ?>
+              <?php if (in_array($rolUsuario, ['Gerente', 'GerenteZona', 'GerenteSucursal'], true)): ?>
                 <li><a class="dropdown-item <?= item_active('mantenimiento_solicitar.php', $current) ?>" href="mantenimiento_solicitar.php">Solicitar mantenimiento</a></li>
               <?php endif; ?>
               <?php if ($esAdmin): ?>
@@ -913,13 +920,15 @@ function item_active(string $f, string $c): string
               <i class="bi bi-tools"></i>Operativos
             </a>
             <ul class="dropdown-menu">
-              <!-- 🔝 Bitacora Sistema (solo Admin) -->
-              <!-- <?php if ($rolUsuario === 'Admin'): ?>
-                <li><a class="dropdown-item <?= item_active('tareas.php', $current) ?>" href="tareas.php">Bitacora Sistema</a></li>
-                <li>
-                  <hr class="dropdown-divider">
-                </li>
-              <?php endif; ?> -->
+              <!-- 🔝 Tickets Central (solo Admin) -->
+              <li>
+                <a class="dropdown-item <?= item_active('tickets_nuevo.php', $current) ?>" href="tickets_nuevo.php">
+                  <i class="bi bi-ticket-detailed me-1"></i>Tickets Central
+                </a>
+              </li>
+              <li>
+                <hr class="dropdown-divider">
+              </li>
 
               <li class="dropdown-header">Insumos & Precios</li>
               <li><a class="dropdown-item <?= item_active('insumos_catalogo.php', $current) ?>" href="insumos_catalogo.php">Catálogo de insumos</a></li>
@@ -952,12 +961,13 @@ function item_active(string $f, string $c): string
               <li><a class="dropdown-item <?= item_active('alta_usuario.php', $current) ?>" href="alta_usuario.php">Alta de usuario</a></li>
               <li><a class="dropdown-item <?= item_active('alta_sucursal.php', $current) ?>" href="alta_sucursal.php">Alta de sucursal</a></li>
 
-              <!-- <li class="dropdown-header">Calidad</li> -->
-              <li>
-                <!-- <a class="dropdown-item <?= item_active('incidencias_matriz.php', $current) ?>" href="incidencias_matriz.php">
-                  <i class="bi bi-bug me-1"></i>Matriz de incidencias
-                </a> -->
-              </li>
+              <!--
+      <li>
+        <a class="dropdown-item <?= item_active('incidencias_matriz.php', $current) ?>" href="incidencias_matriz.php">
+          <i class="bi bi-bug me-1"></i>Matriz de incidencias
+        </a>
+      </li>
+      -->
             </ul>
           </li>
         <?php endif; ?>
