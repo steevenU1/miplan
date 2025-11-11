@@ -50,13 +50,11 @@ $cols = [
   $sel_imei1 . " AS imei1",
   $sel_imei2 . " AS imei2",
 ];
-$cols[] = $col_color  ? "p.`$col_color` AS color"          : "'' AS color";
-$cols[] = $col_precio ? "p.`$col_precio` AS precio_lista"  : "0 AS precio_lista";
-$cols[] = $col_tipo   ? "LOWER(TRIM(p.`$col_tipo`)) AS tipo" : "'' AS tipo";
+$cols[] = $col_color  ? "p.`$col_color` AS color"             : "'' AS color";
+$cols[] = $col_precio ? "p.`$col_precio` AS precio_lista"     : "0 AS precio_lista";
+$cols[] = $col_tipo   ? "LOWER(TRIM(p.`$col_tipo`)) AS tipo"  : "'' AS tipo";
 
 // --- Filtro para EXCLUIR ACCESORIOS ---
-// Si tenemos columna de tipo, filtramos por NOT IN ('accesorio','accesorios').
-// Si NO existe columna de tipo, como fallback dejamos solo los que tengan IMEI.
 $filtroNoAccesorio = '';
 if ($col_tipo) {
   $filtroNoAccesorio = " AND (p.`$col_tipo` IS NULL OR LOWER(TRIM(p.`$col_tipo`)) NOT IN ('accesorio','accesorios'))";
@@ -159,7 +157,14 @@ function pintarOpcion(array $row): string {
 
   $piezaColor = $color !== '' ? " ({$color})" : "";
   $tipoTxt = $tipo !== '' ? "{$tipo} | " : '';
-  $texto = "{$tipoTxt}{$marca} {$modelo}{$piezaColor} — {$imeiTxt} - $" . number_format($precio, 2);
+  $textoVisible = "{$tipoTxt}{$marca} {$modelo}{$piezaColor} — {$imeiTxt} - $" . number_format($precio, 2);
 
-  return '<option value="'.$idInv.'">'.htmlspecialchars($texto, ENT_QUOTES, 'UTF-8').'</option>';
+  // 🔴 Data attributes para el formulario: precio lista (con punto) e IMEI1
+  $dataPrecio = number_format($precio, 2, '.', '');
+  $dataImei   = htmlspecialchars($imei1, ENT_QUOTES, 'UTF-8');
+
+  // NOTA: value=id_inventario porque tu flujo trabaja con inventario
+  return '<option value="'.$idInv.'" data-precio="'.$dataPrecio.'" data-imei="'.$dataImei.'">'
+          . htmlspecialchars($textoVisible, ENT_QUOTES, 'UTF-8') .
+         '</option>';
 }

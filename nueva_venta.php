@@ -329,6 +329,8 @@ foreach ($sucursales as $s) {
             <div class="col-md-4">
               <label class="form-label req">Precio de Venta Total ($)</label>
               <input type="number" step="0.01" min="0.01" name="precio_venta" id="precio_venta" class="form-control" placeholder="0.00" required>
+              <!-- 🔴 Hint del precio de lista -->
+              <div class="form-text">Precio lista (IMEI1): $<span id="precio_lista_hint">—</span></div>
             </div>
             <div class="col-md-4" id="enganche_field">
               <label class="form-label">Enganche ($)</label>
@@ -599,17 +601,18 @@ foreach ($sucursales as $s) {
         $.ajax({
           url: 'ajax_productos_por_sucursal.php',
           method: 'POST',
-          data: {
-            id_sucursal: sucursalId
-          },
+          data: { id_sucursal: sucursalId },
           success: function(response) {
             $('#equipo1, #equipo2').html(response).val('').trigger('change');
             refreshEquipoLocks();
+            // 🔴 Actualiza hint y NO pisa el precio si el usuario ya escribió algo
+            setPrecioFromEquipo(false);
           },
           error: function(xhr) {
             const msg = xhr.responseText || 'Error cargando inventario';
             $('#equipo1, #equipo2').html('<option value="">' + msg + '</option>').trigger('change');
             refreshEquipoLocks();
+            mostrarPrecioListaHint();
           }
         });
       }
@@ -635,12 +638,12 @@ foreach ($sucursales as $s) {
 
         if (esFin) {
           if (!r1n) errores.push('Referencia 1: ingresa el nombre.');
-          if (!tel10(r1t)) errores.push('Referencia 1: teléfono debe tener 10 dígitos.');
+          if (!/^\d{10}$/.test(r1t)) errores.push('Referencia 1: teléfono debe tener 10 dígitos.');
           if (!r2n) errores.push('Referencia 2: ingresa el nombre.');
-          if (!tel10(r2t)) errores.push('Referencia 2: teléfono debe tener 10 dígitos.');
+          if (!/^\d{10}$/.test(r2t)) errores.push('Referencia 2: teléfono debe tener 10 dígitos.');
         } else {
-          if (r1t && !tel10(r1t)) errores.push('Referencia 1: teléfono debe tener 10 dígitos.');
-          if (r2t && !tel10(r2t)) errores.push('Referencia 2: teléfono debe tener 10 dígitos.');
+          if (r1t && !/^\d{10}$/.test(r1t)) errores.push('Referencia 1: teléfono debe tener 10 dígitos.');
+          if (r2t && !/^\d{10}$/.test(r2t)) errores.push('Referencia 2: teléfono debe tener 10 dígitos.');
         }
       }
 
@@ -655,6 +658,50 @@ foreach ($sucursales as $s) {
         if (idf && idf.size > MAX_SIZE_BYTES) errores.push('La identificación excede 5 MB.');
         if (cto && cto.size > MAX_SIZE_BYTES) errores.push('El contrato excede 5 MB.');
       }
+
+      // ======== Precio lista automático por equipo principal ========
+      function precioListaSeleccionado() {
+        const $opt = $('#equipo1').find('option:selected');
+        if (!$opt.length) return NaN;
+        const val = ($opt.data('precio') ?? '').toString();
+        const p = parseFloat(val);
+        return Number.isFinite(p) ? p : NaN;
+      }
+
+      function mostrarPrecioListaHint() {
+        const p = precioListaSeleccionado();
+        $('#precio_lista_hint').text(Number.isFinite(p) ? p.toFixed(2) : '—');
+      }
+
+      /**
+       * setPrecioFromEquipo(force)
+       * - force=true: sobreescribe el campo precio_venta con el precio de lista.
+       * - force=false: solo pone el precio si el input está vacío.
+       */
+      function setPrecioFromEquipo(force = false) {
+        const p = precioListaSeleccionado();
+        if (Number.isFinite(p)) {
+          if (force || !$('#precio_venta').val()) {
+            $('#precio_venta').val(p.toFixed(2));
+          }
+        }
+        mostrarPrecioListaHint();
+      }
+
+      // Al seleccionar equipo principal, forzar a precio de lista
+      $('#equipo1').on('change select2:select', function () {
+        setPrecioFromEquipo(true);
+      });
+
+      // Si el usuario borra/deja 0 el precio y sale del campo, restablece el de lista
+      $('#precio_venta').on('blur', function () {
+        const val = parseFloat($(this).val());
+        if (!Number.isFinite(val) || val <= 0) {
+          setPrecioFromEquipo(true);
+        } else {
+          mostrarPrecioListaHint();
+        }
+      });
 
       // ========= Validación + modal =========
       let permitSubmit = false;
@@ -780,10 +827,7 @@ foreach ($sucursales as $s) {
         if (errores.length > 0) {
           $('#errores').removeClass('d-none')
             .html('<strong>Corrige lo siguiente:</strong><ul class="mb-0"><li>' + errores.join('</li><li>') + '</li></ul>');
-          window.scrollTo({
-            top: 0,
-            behavior: 'smooth'
-          });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
           return;
         }
 
@@ -805,6 +849,7 @@ foreach ($sucursales as $s) {
       }
       initEquipos();
       refreshEquipoLocks();
+      mostrarPrecioListaHint();
     });
   </script>
 

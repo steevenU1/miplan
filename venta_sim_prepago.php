@@ -1,9 +1,9 @@
 <?php
 /* venta_sim_prepago.php — Alta express de SIM (misma página) + venta normal
    Ajustes:
-   - Tipo de venta incluye "SIM KY".
-   - Se elimina el campo "Precio" y se guarda precio_total / precio_unitario = NULL.
-   - JS sin validaciones de precio.
+   - Tipo de venta incluye "SIM KY" y "Buen Fin".
+   - Para "Buen Fin": precio_total=0.00 y precio_unitario=0.00 (venta a $0).
+   - Se mantiene lógica de comisiones existente (Buen Fin se trata como Nueva).
 */
 session_start();
 if (!isset($_SESSION['id_usuario'])) { header("Location: index.php"); exit(); }
@@ -52,7 +52,7 @@ function cumpleCuotaSucursal($conn, $idSucursal, $fechaVenta) {
     $fin = clone $ini;
     $fin->modify("+6 days")->setTime(23,59,59);
 
-    $q = "SELECT SUM(precio_total) AS monto
+    $q = "SELECT SUM(COALESCE(precio_total,0)) AS monto
           FROM ventas_sims
           WHERE id_sucursal=? AND fecha_venta BETWEEN ? AND ?";
     $stmt2 = $conn->prepare($q);
@@ -66,7 +66,7 @@ function cumpleCuotaSucursal($conn, $idSucursal, $fechaVenta) {
     return $monto >= $cuota;
 }
 function calcularComisionesSIM($esquema, $tipoSim, $tipoVenta, $cumpleCuota) {
-    // SIM KY => 0 por defecto (ajustamos cuando haya reglas)
+    // SIM KY => 0 por defecto
     if (strtolower($tipoVenta) === 'sim ky') return 0.0;
 
     $tipoSim   = strtolower($tipoSim);
@@ -185,22 +185,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['accion'] ?? '') !== 'alta
             ? ($cumpleCuota ? ($esquema['comision_gerente_sim_con'] ?? 0) : ($esquema['comision_gerente_sim_sin'] ?? 0))
             : 0;
 
-        // 3) Insertar venta (precio_total = NULL)
-        $sqlVenta = "INSERT INTO ventas_sims
-            (tipo_venta, tipo_sim, comentarios, precio_total, comision_ejecutivo, comision_gerente, id_usuario, id_sucursal, fecha_venta)
-            VALUES (?,?,?, NULL, ?, ?, ?, ?, NOW())";
-        $stmt = $conn->prepare($sqlVenta);
-        $stmt->bind_param("sssddii", $tipoVenta, $tipoSim, $comentarios, $comisionEjecutivo, $comisionGerente, $idUsuario, $idSucursal);
-        $stmt->execute();
-        $idVenta = (int)$stmt->insert_id;
-        $stmt->close();
+        // 3) Precio: para "Buen Fin" forzamos $0.00; para otros NULL (sin capturar)
+        $esBuenFin = (strcasecmp($tipoVenta, 'Buen Fin') === 0);
+        if ($esBuenFin) {
+            // Insert con precio_total=0.00
+            $sqlVenta = "INSERT INTO ventas_sims
+                (tipo_venta, tipo_sim, comentarios, precio_total, comision_ejecutivo, comision_gerente, id_usuario, id_sucursal, fecha_venta)
+                VALUES (?,?,?, 0.00, ?, ?, ?, ?, NOW())";
+            $stmt = $conn->prepare($sqlVenta);
+            $stmt->bind_param("sssddii", $tipoVenta, $tipoSim, $comentarios, $comisionEjecutivo, $comisionGerente, $idUsuario, $idSucursal);
+            $stmt->execute();
+            $idVenta = (int)$stmt->insert_id;
+            $stmt->close();
 
-        // 4) Detalle: precio_unitario = NULL
-        $sqlDetalle = "INSERT INTO detalle_venta_sims (id_venta, id_sim, precio_unitario) VALUES (?,?,NULL)";
-        $stmt = $conn->prepare($sqlDetalle);
-        $stmt->bind_param("ii", $idVenta, $idSim);
-        $stmt->execute();
-        $stmt->close();
+            // 4) Detalle con precio_unitario=0.00
+            $sqlDetalle = "INSERT INTO detalle_venta_sims (id_venta, id_sim, precio_unitario) VALUES (?,?,0.00)";
+            $stmt = $conn->prepare($sqlDetalle);
+            $stmt->bind_param("ii", $idVenta, $idSim);
+            $stmt->execute();
+            $stmt->close();
+        } else {
+            // Insert con precio_total=NULL (como tenías)
+            $sqlVenta = "INSERT INTO ventas_sims
+                (tipo_venta, tipo_sim, comentarios, precio_total, comision_ejecutivo, comision_gerente, id_usuario, id_sucursal, fecha_venta)
+                VALUES (?,?,?, NULL, ?, ?, ?, ?, NOW())";
+            $stmt = $conn->prepare($sqlVenta);
+            $stmt->bind_param("sssddii", $tipoVenta, $tipoSim, $comentarios, $comisionEjecutivo, $comisionGerente, $idUsuario, $idSucursal);
+            $stmt->execute();
+            $idVenta = (int)$stmt->insert_id;
+            $stmt->close();
+
+            // 4) Detalle con precio_unitario=NULL
+            $sqlDetalle = "INSERT INTO detalle_venta_sims (id_venta, id_sim, precio_unitario) VALUES (?,?,NULL)";
+            $stmt = $conn->prepare($sqlDetalle);
+            $stmt->bind_param("ii", $idVenta, $idSim);
+            $stmt->execute();
+            $stmt->close();
+        }
 
         // 5) Actualizar inventario
         $sqlUpdate = "UPDATE inventario_sims
@@ -349,7 +370,11 @@ $stmt->close();
             <option value="Portabilidad">Portabilidad</option>
             <option value="Regalo">Regalo</option>
             <option value="SIM KY">SIM KY</option>
+            <option value="Buen Fin">Buen Fin</option><!-- 🔴 Nuevo: precio $0 -->
           </select>
+          <div class="form-text" id="hint_buenfin" style="display:none;">
+            Esta venta se registrará a <b>$0.00</b> (promoción Buen Fin).
+          </div>
         </div>
 
         <div class="col-md-8">
@@ -451,6 +476,7 @@ $stmt->close();
                   <li><strong>ICCID:</strong> <span id="conf_iccid">—</span></li>
                   <li><strong>Operador:</strong> <span id="conf_operador">—</span></li>
                   <li><strong>Tipo de venta:</strong> <span id="conf_tipo">—</span></li>
+                  <li><strong id="conf_precio_row" style="display:none;">Precio:</strong> <span id="conf_precio"></span></li>
                   <li class="text-muted"><em>Comentarios:</em> <span id="conf_comentarios">—</span></li>
                 </ul>
               </div>
@@ -489,6 +515,7 @@ $(function(){
   const $tipo   = $('#tipo_venta');
   const $coment = $('#comentarios');
   const $tipoSimView = $('#tipoSimView');
+  const $hintBuenFin = $('#hint_buenfin');
 
   // Select2
   $simSel.select2({
@@ -507,6 +534,13 @@ $(function(){
   }
   actualizarTipo();
   $simSel.on('change', actualizarTipo);
+
+  function toggleBuenFinHint(){
+    const isBF = ($tipo.val() === 'Buen Fin');
+    $hintBuenFin.toggle(isBF);
+  }
+  toggleBuenFinHint();
+  $tipo.on('change', toggleBuenFinHint);
 
   // Validación + Modal
   let allowSubmit = false;
@@ -533,13 +567,18 @@ $(function(){
     $('#conf_operador').text(operador || '—');
     $('#conf_tipo').text(tipo);
     $('#conf_comentarios').text(comentarios || '—');
+
+    // Mostrar precio $0.00 cuando es Buen Fin
+    const isBF = (tipo === 'Buen Fin');
+    $('#conf_precio_row').toggle(isBF);
+    $('#conf_precio').text(isBF ? '$0.00' : '');
   }
 
   $form.on('submit', function(e){
     if (allowSubmit) return; // ya confirmado
     e.preventDefault();
     const errs = validar();
-    if (errs.length) { alert('Corrige lo siguiente:\n• ' + errs.join('\n• ')); return; }
+    if (errs.length) { alert('Corrige lo siguiente:\\n• ' + errs.join('\\n• ')); return; }
     poblarModal(); modalConfirm.show();
   });
 
