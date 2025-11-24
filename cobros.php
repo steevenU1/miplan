@@ -94,10 +94,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $monto_tarjeta  = 0.00;
         }
 
-        // Comisión especial alineada a LUGA:
-        // SOLO para Abono PayJoy/Krediya y NO aplica si el pago es Tarjeta.
-        $esAbono = in_array($motivo, ['Abono PayJoy','Abono Krediya'], true);
-        $comision_especial = ($esAbono && $tipo_pago !== 'Tarjeta') ? 10.00 : 0.00;
+        // Antes: se daba comisión especial de $10 para Abono PayJoy/Krediya (no tarjeta).
+        // Ahora: se desactiva la comisión especial para estos cobros.
+        $comision_especial = 0.00;
 
         // Reglas de Innovación Móvil
         $motivosInnovacion = ['Enganche Innovacion Movil','Pago Innovacion Movil'];
@@ -269,14 +268,15 @@ try {
                 'Pago Innovacion Movil',
               ];
               foreach ($motivos as $m) {
-                  $sel = ($motivoSel === $m) ? 'selected' : '';
-                  echo "<option $sel>".h($m)."</option>";
+                  $sel   = ($motivoSel === $m) ? 'selected' : '';
+                  // 🔒 Deshabilitar opción "Venta SIM"
+                  $extra = ($m === 'Venta SIM') ? 'disabled' : '';
+                  echo "<option $sel $extra>".h($m)."</option>";
               }
             ?>
           </select>
           <div class="form-help">
-            Para <strong>Abono PayJoy/Krediya</strong> la comisión especial se agrega
-            <em>solo si el pago no es con tarjeta</em>.
+            Actualmente los abonos <strong>PayJoy</strong> y <strong>Krediya</strong> no generan comisión especial desde esta vista.
           </div>
         </div>
 
@@ -434,7 +434,7 @@ try {
 <!-- JS -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <!-- Bootstrap bundle solo para el modal de datos de cliente -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script> -->
 <script>
 (function(){
   const $motivo=$("#motivo"),
@@ -473,8 +473,11 @@ try {
     validar();
   }
 
-  // Comisión especial alineada a LUGA (no aplica si pago con tarjeta)
-  function comisionEspecial(m,t){ return ((m==="Abono PayJoy"||m==="Abono Krediya") && t!=="Tarjeta") ? 10 : 0; }
+  // Antes: comisionEspecial devolvía $10 para Abono PayJoy/Krediya (no tarjeta).
+  // Ahora: siempre 0 (la comisión especial se dejó de pagar desde esta vista).
+  function comisionEspecial(m,t){ 
+    return 0; 
+  }
 
   function validar(){
     const m=($motivo.val()||"").trim(),

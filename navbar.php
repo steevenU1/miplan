@@ -207,10 +207,12 @@ $grpVentas     = [
   'venta_sim_pospago.php',
   'payjoy_tc_nueva.php',
   'nueva_venta_accesorio.php',
+  'recarga_tiempo_aire.php',
   'historial_ventas.php',
   'historial_ventas_sims.php',
   'historial_payjoy_tc.php',
-  'historial_ventas_accesorios.php'
+  'historial_ventas_accesorios.php',
+  'historial_recargas.php'
 ];
 $grpInventario = [
   'panel.php',
@@ -679,6 +681,7 @@ function item_active(string $f, string $c): string
               <li><a class="dropdown-item <?= item_active('venta_sim_pospago.php', $current) ?>" href="venta_sim_pospago.php">Venta SIM pospago</a></li>
               <li><a class="dropdown-item <?= item_active('payjoy_tc_nueva.php', $current) ?>" href="payjoy_tc_nueva.php">PayJoy TC – Nueva</a></li>
               <li><a class="dropdown-item <?= item_active('nueva_venta_accesorio.php', $current) ?>" href="nueva_venta_accesorio.php">Venta accesorios</a></li>
+              <li><a class="dropdown-item <?= item_active('recarga_tiempo_aire.php', $current) ?>" href="recarga_tiempo_aire.php">Venta Tiempo Aire</a></li>
 
               <li>
                 <hr class="dropdown-divider">
@@ -690,6 +693,7 @@ function item_active(string $f, string $c): string
               <li><a class="dropdown-item <?= item_active('historial_ventas_sims.php', $current) ?>" href="historial_ventas_sims.php">Historial ventas SIM</a></li>
               <li><a class="dropdown-item <?= item_active('historial_payjoy_tc.php', $current) ?>" href="historial_payjoy_tc.php">Historial PayJoy TC</a></li>
               <li><a class="dropdown-item <?= item_active('historial_ventas_accesorios.php', $current) ?>" href="historial_ventas_accesorios.php">Historial ventas accesorios</a></li>
+              <li><a class="dropdown-item <?= item_active('historial_recargas.php', $current) ?>" href="historial_recargas.php">Historial ventas Recargas</a></li>
             <?php endif; ?>
           </ul>
         </li>
