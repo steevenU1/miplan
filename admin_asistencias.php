@@ -1,5 +1,7 @@
 <?php
 // admin_asistencias.php  ·  Panel Admin con KPIs + Matriz + Detalle (por día) + Permisos + Export CSV + Alta Vacaciones (modal)
+// + Aprobación/Rechazo de permisos (Admin)
+
 ob_start(); // buffer para evitar "headers already sent"
 session_start();
 if (!isset($_SESSION['id_usuario']) || ($_SESSION['rol'] ?? '') !== 'Admin') {
@@ -72,6 +74,12 @@ function stmt_all_assoc(mysqli_stmt $stmt): array {
   return $rows;
 }
 
+/* ================== CSRF ================== */
+if (empty($_SESSION['csrf_perm'])) {
+  $_SESSION['csrf_perm'] = bin2hex(random_bytes(16));
+}
+$CSRF = $_SESSION['csrf_perm'];
+
 /* ================== Filtros ================== */
 $isExport = isset($_GET['export']);
 $weekIso = $_GET['week'] ?? currentOpWeekIso();
@@ -86,8 +94,95 @@ if (!empty($_GET['dia']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['dia'])) {
   if ($_GET['dia'] >= $start && $_GET['dia'] <= $end) { $diaSel = $_GET['dia']; }
 }
 
-/* ===== Flash del alta de vacaciones ===== */
+/* ===== Flash global ===== */
 $msgVac=''; $clsVac='info';
+$msgPerm=''; $clsPerm='info';
+
+/* ===== Handler: Decisión de permisos (aprobar/rechazar) ===== */
+if (
+  $_SERVER['REQUEST_METHOD'] === 'POST'
+  && isset($_POST['accion'])
+  && in_array($_POST['accion'], ['aprobar_permiso','rechazar_permiso'], true)
+) {
+  // Validaciones básicas
+  $csrf = $_POST['csrf'] ?? '';
+  if (!hash_equals($CSRF, $csrf)) {
+    $msgPerm = '❌ Token inválido. Recarga la página e inténtalo de nuevo.';
+    $clsPerm = 'danger';
+  } elseif (!table_exists($conn,'permisos_solicitudes')) {
+    $msgPerm = '❌ No existe la tabla permisos_solicitudes.';
+    $clsPerm = 'danger';
+  } else {
+    $idPerm = (int)($_POST['id_permiso'] ?? 0);
+    $coment = trim((string)($_POST['comentario_aprobador'] ?? ''));
+    $accion = $_POST['accion'];
+
+    // Columnas dinámicas
+    $hasStatus   = column_exists($conn,'permisos_solicitudes','status');
+    $hasAprobPor = column_exists($conn,'permisos_solicitudes','aprobado_por');
+    $hasAprobEn  = column_exists($conn,'permisos_solicitudes','aprobado_en');
+    $hasObsApr   = column_exists($conn,'permisos_solicitudes','comentario_aprobador');
+
+    // Cargar permiso y validar transición desde 'Pendiente'
+    $st = $conn->prepare("SELECT id, ".($hasStatus?'status':'NULL AS status')." FROM permisos_solicitudes WHERE id=? LIMIT 1");
+    $st->bind_param('i',$idPerm);
+    $st->execute();
+    $row = $st->get_result()->fetch_assoc();
+    $st->close();
+
+    if (!$row) {
+      $msgPerm = '❌ Permiso no encontrado.';
+      $clsPerm = 'danger';
+    } else {
+      $statusActual = $hasStatus ? (string)$row['status'] : 'Pendiente'; // si no hay columna, asumimos flujo "pendiente"
+      if ($statusActual !== 'Pendiente' && $hasStatus) {
+        $msgPerm = '⚠️ Este permiso ya fue resuelto.';
+        $clsPerm = 'warning';
+      } else {
+        // Construir UPDATE dinámico
+        $sets = [];
+        $types = '';
+        $vals  = [];
+
+        if ($hasStatus) {
+          $sets[] = "status = ?";
+          $types .= 's';
+          $vals[] = ($accion === 'aprobar_permiso') ? 'Aprobado' : 'Rechazado';
+        }
+        if ($hasAprobPor) {
+          $sets[] = "aprobado_por = ?";
+          $types .= 'i';
+          $vals[] = (int)$_SESSION['id_usuario'];
+        }
+        if ($hasAprobEn) {
+          $sets[] = "aprobado_en = NOW()";
+        }
+        if ($hasObsApr) {
+          $sets[] = "comentario_aprobador = ?";
+          $types .= 's';
+          $vals[] = $coment;
+        }
+
+        if (!$sets) {
+          // Si no hay columnas, al menos no tronar; decimos "simulado"
+          $msgPerm = '⚠️ No hay columnas para guardar la decisión (status/aprobado_por/aprobado_en). Revisa el esquema.';
+          $clsPerm = 'warning';
+        } else {
+          $sql = "UPDATE permisos_solicitudes SET ".implode(', ',$sets)." WHERE id=?";
+          $types .= 'i'; $vals[] = $idPerm;
+
+          $st = $conn->prepare($sql);
+          if ($types) { $st->bind_param($types, ...$vals); }
+          $st->execute();
+          $st->close();
+
+          $msgPerm = ($accion === 'aprobar_permiso') ? '✅ Permiso aprobado.' : '✅ Permiso rechazado.';
+          $clsPerm = 'success';
+        }
+      }
+    }
+  }
+}
 
 /* ===== Handler: Alta de vacaciones (modal) ===== */
 if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['accion'] ?? '')==='alta_vacaciones') {
@@ -187,12 +282,130 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['accion'] ?? '')==='alta_vaca
   }
 }
 
+/* ===== Handler: Alta de incidencias (falta justificada / permiso / incapacidad) ===== */
+if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['accion'] ?? '')==='alta_incidencia') {
+  $idUsuario   = (int)($_POST['id_usuario'] ?? 0);
+  $fechaInc    = trim($_POST['fecha_incidencia'] ?? '');
+  $tipoInc     = trim($_POST['tipo_incidencia'] ?? '');
+  $coment      = trim($_POST['comentario'] ?? '');
+
+  $tiposValidos = ['Falta justificada','Permiso','Incapacidad'];
+
+  // Traer usuario y sucursal (válido para tiendas propias)
+  $userRow = null;
+  $stU = $conn->prepare("SELECT u.id, u.id_sucursal FROM usuarios u JOIN sucursales s ON s.id=u.id_sucursal WHERE u.id=? AND u.activo=1 AND u.rol IN ('Gerente','Ejecutivo') AND s.tipo_sucursal='tienda' AND s.subtipo='propia' LIMIT 1");
+  $stU->bind_param('i',$idUsuario); $stU->execute();
+  $resU=$stU->get_result(); $userRow=$resU->fetch_assoc(); $stU->close();
+
+  if (!$userRow) {
+    $msgPerm = "Usuario inválido o no elegible para incidencia.";
+    $clsPerm = "danger";
+  } elseif (!preg_match('/^\d{4}-\d{2}-\d{2}$/',$fechaInc)) {
+    $msgPerm = "Fecha de incidencia inválida.";
+    $clsPerm = "danger";
+  } elseif (!in_array($tipoInc, $tiposValidos, true)) {
+    $msgPerm = "Tipo de incidencia inválido.";
+    $clsPerm = "danger";
+  } elseif (!table_exists($conn,'permisos_solicitudes')) {
+    $msgPerm = "No existe la tabla permisos_solicitudes.";
+    $clsPerm = "danger";
+  } else {
+    // Descubrir columnas presentes
+    $dateCol       = pickDateCol($conn,'permisos_solicitudes',['fecha','fecha_permiso','dia','fecha_solicitada','creado_en']);
+    $hasAprobPor   = column_exists($conn,'permisos_solicitudes','aprobado_por');
+    $hasAprobEn    = column_exists($conn,'permisos_solicitudes','aprobado_en');
+    $hasComApr     = column_exists($conn,'permisos_solicitudes','comentario_aprobador');
+    $hasStatus     = column_exists($conn,'permisos_solicitudes','status');
+    $hasMotivo     = column_exists($conn,'permisos_solicitudes','motivo');
+    $hasComent     = column_exists($conn,'permisos_solicitudes','comentario');
+    $hasSucursal   = column_exists($conn,'permisos_solicitudes','id_sucursal');
+    $hasCreadoPor  = column_exists($conn,'permisos_solicitudes','creado_por');
+    $hasCreadoEn   = column_exists($conn,'permisos_solicitudes','creado_en');
+
+    // Columnas del insert
+    $cols = ['id_usuario'];
+    if ($hasSucursal)   $cols[] = 'id_sucursal';
+    $cols[] = $dateCol;
+    if ($hasMotivo)     $cols[] = 'motivo';
+    if ($hasComent)     $cols[] = 'comentario';
+    if ($hasStatus)     $cols[] = 'status';
+    if ($hasCreadoPor)  $cols[] = 'creado_por';
+    if ($hasCreadoEn)   $cols[] = 'creado_en';      // NOW()
+    if ($hasAprobPor)   $cols[] = 'aprobado_por';
+    if ($hasAprobEn)    $cols[] = 'aprobado_en';    // NOW()
+    if ($hasComApr)     $cols[] = 'comentario_aprobador';
+
+    $placeholders = [];
+    foreach ($cols as $c) {
+      $placeholders[] = ($c==='creado_en' || $c==='aprobado_en') ? 'NOW()' : '?';
+    }
+    $sqlIns = "INSERT INTO permisos_solicitudes (`".implode('`,`',$cols)."`) VALUES (".implode(',',$placeholders).")";
+    $stmt = $conn->prepare($sqlIns);
+
+    // Evitar duplicado: mismo usuario, misma fecha, mismo motivo
+    if ($hasMotivo) {
+      $sqlDup = "SELECT id FROM permisos_solicitudes WHERE id_usuario=? AND DATE(`{$dateCol}`)=? AND motivo=? LIMIT 1";
+      $stDup = $conn->prepare($sqlDup);
+      $stDup->bind_param('iss',$idUsuario,$fechaInc,$tipoInc);
+      $stDup->execute();
+      $dup = (bool)$stDup->get_result()->fetch_assoc();
+      $stDup->close();
+      if ($dup) {
+        $msgPerm = "⚠️ Ya existe una incidencia de este tipo para ese día.";
+        $clsPerm = "warning";
+      } else {
+        $vals=[]; $types='';
+        foreach ($cols as $c) {
+          if ($c==='creado_en' || $c==='aprobado_en') continue;
+          switch ($c) {
+            case 'id_usuario':            $vals[]=$idUsuario;                     $types.='i'; break;
+            case 'id_sucursal':           $vals[]=(int)$userRow['id_sucursal'];   $types.='i'; break;
+            case 'motivo':                $vals[]=$tipoInc;                       $types.='s'; break;
+            case 'comentario':            $vals[]=$coment;                        $types.='s'; break;
+            case 'status':                $vals[]='Aprobado';                     $types.='s'; break;
+            case 'creado_por':            $vals[]=(int)$_SESSION['id_usuario'];   $types.='i'; break;
+            case 'aprobado_por':          $vals[]=(int)$_SESSION['id_usuario'];   $types.='i'; break;
+            case 'comentario_aprobador':  $vals[]='Alta incidencia (admin)';      $types.='s'; break;
+            default:
+              if ($c===$dateCol){ $vals[]=$fechaInc; $types.='s'; }
+          }
+        }
+        $stmt->bind_param($types, ...$vals);
+        $stmt->execute();
+        $msgPerm = "✅ Incidencia registrada correctamente.";
+        $clsPerm = "success";
+      }
+    } else {
+      // Sin columna motivo: se guarda solo como permiso genérico aprobado
+      $vals=[]; $types='';
+      foreach ($cols as $c) {
+        if ($c==='creado_en' || $c==='aprobado_en') continue;
+        switch ($c) {
+          case 'id_usuario':            $vals[]=$idUsuario;                     $types.='i'; break;
+          case 'id_sucursal':           $vals[]=(int)$userRow['id_sucursal'];   $types.='i'; break;
+          case 'comentario':            $vals[]=$coment;                        $types.='s'; break;
+          case 'status':                $vals[]='Aprobado';                     $types.='s'; break;
+          case 'creado_por':            $vals[]=(int)$_SESSION['id_usuario'];   $types.='i'; break;
+          case 'aprobado_por':          $vals[]=(int)$_SESSION['id_usuario'];   $types.='i'; break;
+          case 'comentario_aprobador':  $vals[]='Alta incidencia (admin)';      $types.='s'; break;
+          default:
+            if ($c===$dateCol){ $vals[]=$fechaInc; $types.='s'; }
+        }
+      }
+      $stmt->bind_param($types, ...$vals);
+      $stmt->execute();
+      $msgPerm = "✅ Incidencia registrada correctamente.";
+      $clsPerm = "success";
+    }
+  }
+}
+
 /* ===== Sucursales 'tienda' 'propia' ===== */
 $sucursales = [];
 $resSuc = $conn->query("SELECT id,nombre FROM sucursales WHERE tipo_sucursal='tienda' AND subtipo='propia' ORDER BY nombre");
 if ($resSuc) { while ($r = $resSuc->fetch_assoc()) $sucursales[] = $r; }
 
-$sucursal_id = isset($_GET['sucursal_id']) ? (int)$_GET['sucursal_id'] : 0;
+$sucursal_id = isset($_GET['sucursal_id']) ? (int)($_GET['sucursal_id']) : 0;
 $qsExportArr = ['week'=>$weekIso,'sucursal_id'=>$sucursal_id];
 if ($diaSel) $qsExportArr['dia'] = $diaSel;
 $qsExport = http_build_query($qsExportArr);
@@ -302,22 +515,32 @@ foreach($asistDetWeek as $a){
   if(!isset($asistByUserDay[$uid][$f])) $asistByUserDay[$uid][$f]=$a;
 }
 
-/* ===== Permisos de la semana (tabla informativa) ===== */
+/* ===== Permisos de la semana (tabla + acciones) ===== */
 $permisosSemana=[];
+$permSupports = ['status'=>false,'aprobado_por'=>false,'aprobado_en'=>false,'comentario_aprobador'=>false];
 if (table_exists($conn,'permisos_solicitudes')) {
   $permDateRaw = pickDateColWithAlias($conn, 'permisos_solicitudes', 'p', ['fecha','dia','fecha_solicitada','fecha_permiso','creado_en']);
   $typesPS='ss'; $paramsPS=[$start,$end];
   $wherePS = " AND s.tipo_sucursal='tienda' AND s.subtipo='propia' ";
-  $hasAprobPor = column_exists($conn,'permisos_solicitudes','aprobado_por');
+  $permSupports['status'] = column_exists($conn,'permisos_solicitudes','status');
+  $permSupports['aprobado_por'] = column_exists($conn,'permisos_solicitudes','aprobado_por');
+  $permSupports['aprobado_en']  = column_exists($conn,'permisos_solicitudes','aprobado_en');
+  $permSupports['comentario_aprobador'] = column_exists($conn,'permisos_solicitudes','comentario_aprobador');
+
   if ($sucursal_id>0){ $typesPS.='i'; $paramsPS[]=$sucursal_id; $wherePS.=' AND s.id=? '; }
-  $selAprob = $hasAprobPor ? 'p.aprobado_por' : 'NULL AS aprobado_por';
+
+  $selAprob = ($permSupports['aprobado_por'] ? 'p.aprobado_por' : 'NULL AS aprobado_por')
+            . ', ' . ($permSupports['aprobado_en']  ? 'p.aprobado_en'  : 'NULL AS aprobado_en')
+            . ', ' . ($permSupports['comentario_aprobador'] ? 'p.comentario_aprobador' : 'NULL AS comentario_aprobador');
+
   $sqlPS="
-    SELECT p.*, {$permDateRaw} AS fecha, u.nombre AS usuario, s.nombre AS sucursal, {$selAprob}
+    SELECT p.id, p.id_usuario, p.id_sucursal, p.motivo, p.comentario, ".($permSupports['status']?'p.status':'\'Pendiente\' AS status').",
+           {$permDateRaw} AS fecha, u.nombre AS usuario, s.nombre AS sucursal, {$selAprob}
     FROM permisos_solicitudes p
     JOIN usuarios u ON u.id=p.id_usuario
     JOIN sucursales s ON s.id=p.id_sucursal
     WHERE DATE({$permDateRaw}) BETWEEN ? AND ? $wherePS
-    ORDER BY s.nombre,u.nombre, {$permDateRaw} DESC
+    ORDER BY s.nombre,u.nombre, {$permDateRaw} DESC, p.id DESC
   ";
   $stmt=$conn->prepare($sqlPS);
   $stmt->bind_param($typesPS, ...$paramsPS);
@@ -327,7 +550,7 @@ if (table_exists($conn,'permisos_solicitudes')) {
 }
 
 /* ====== Construcción de matriz + KPIs ====== */
-$days=[]; for($i=0;$i<7;$i++){ $d=clone $tuesdayStart; $d->modify("+$i day"); $days[]=$d; }
+$days=[]; for($i=0;$i<7;$i++){ $d=clone $tuesdayStart; $d->modify("+$i day"); $days[] = $d; }
 $weekNames=['Mar','Mié','Jue','Vie','Sáb','Dom','Lun'];
 
 $matriz=[];
@@ -340,11 +563,11 @@ foreach($usuarios as $u){
 
   foreach($days as $d){
     $f=$d->format('Y-m-d');
-    $isFuture = ($f > $today); // no contar faltas en futuro
+    $isFuture = ($f > $today);
     $dow=(int)$d->format('N');
     $hor=$horarios[$sid][$dow]??null; $cerrado=$hor?((int)$hor['cerrado']===1):false;
     $isDesc=!empty($descansos[$uid][$f]);
-    $isPerm = isset($permAprob[$uid][$f]); // ahora contiene motivo o 'PERMISO'
+    $isPerm = isset($permAprob[$uid][$f]);
     $a=$asistByUserDay[$uid][$f]??null;
     $esLaborable = !$cerrado && !$isDesc && !$isPerm;
 
@@ -383,9 +606,8 @@ $cumplimiento = ($laborables>0) ? round(($presentes / $laborables)*100,1) : 0.0;
 $horasTot = $totMin>0 ? round($totMin/60,2) : 0.0;
 
 /* ====== EXPORTACIONES (antes de imprimir cualquier HTML/ navbar) ====== */
-// NOTA: exports usan la semana completa (asistDetWeek).
 if ($isExport) {
-  ini_set('display_errors','0'); // evita que warnings contaminen el CSV
+  ini_set('display_errors','0');
   while (ob_get_level()) { ob_end_clean(); }
 
   header("Content-Type: text/csv; charset=UTF-8");
@@ -473,19 +695,16 @@ require_once __DIR__.'/navbar.php';
     body{ background:#f8fafc; }
     .card-elev{border:0; border-radius:1rem; box-shadow:0 10px 24px rgba(15,23,42,.06), 0 2px 6px rgba(15,23,42,.05);}
     .table-xs td, .table-xs th{ padding:.45rem .6rem; font-size:.92rem; }
-    /* Pills compactos */
     .pill{ display:inline-block; border-radius:999px; font-weight:700; line-height:1; }
     .pill-compact{ padding:.12rem .38rem; font-size:.72rem; min-width:1.35rem; text-align:center; border:1px solid transparent; }
-    /* Colores */
-    .pill-A{ background:#e6fcf5; color:#0f5132; border-color:#c3fae8; }       /* Asistió (verde) */
-    .pill-R{ background:#fff3cd; color:#8a6d3b; border-color:#ffeeba; }       /* Retardo (ámbar) */
-    .pill-F{ background:#ffe3e3; color:#842029; border-color:#f5c2c7; }       /* Falta (rojo) */
-    .pill-P{ background:#e2f0d9; color:#2b6a2b; border-color:#c7e3be; }       /* Permiso (verde suave) */
-    .pill-V{ background:#fff0f6; color:#9c36b5; border-color:#f3d9fa; }       /* Vacaciones (morado suave) */
-    .pill-D{ background:#f3f4f6; color:#374151; border-color:#e5e7eb; }       /* Descanso (gris) */
-    .pill-X{ background:#ede9fe; color:#5b21b6; border-color:#ddd6fe; }       /* Cerrada (lila) */
-    .pill-PN{ background:#eef2ff; color:#3730a3; border-color:#c7d2fe; }      /* Pendiente (azul) */
-
+    .pill-A{ background:#e6fcf5; color:#0f5132; border-color:#c3fae8; }
+    .pill-R{ background:#fff3cd; color:#8a6d3b; border-color:#ffeeba; }
+    .pill-F{ background:#ffe3e3; color:#842029; border-color:#f5c2c7; }
+    .pill-P{ background:#e2f0d9; color:#2b6a2b; border-color:#c7e3be; }
+    .pill-V{ background:#fff0f6; color:#9c36b5; border-color:#f3d9fa; }
+    .pill-D{ background:#f3f4f6; color:#374151; border-color:#e5e7eb; }
+    .pill-X{ background:#ede9fe; color:#5b21b6; border-color:#ddd6fe; }
+    .pill-PN{ background:#eef2ff; color:#3730a3; border-color:#c7d2fe; }
     .thead-sticky th{ position:sticky; top:0; background:#111827; color:#fff; z-index:2; }
     .kpi{ border:0; border-radius:1rem; padding:1rem 1.25rem; display:flex; gap:.9rem; align-items:center; }
     .kpi i{ font-size:1.3rem; opacity:.9; }
@@ -496,6 +715,7 @@ require_once __DIR__.'/navbar.php';
     .bg-soft-red{ background:#ffe3e3; }
     .bg-soft-purple{ background:#f3f0ff; }
     .bg-soft-slate{ background:#f1f5f9; }
+    .w-20rem{ max-width:20rem; }
   </style>
 </head>
 <body>
@@ -507,6 +727,9 @@ require_once __DIR__.'/navbar.php';
 
   <?php if($msgVac): ?>
     <div id="alert-vac" class="alert alert-<?= h($clsVac) ?>"><?= h($msgVac) ?></div>
+  <?php endif; ?>
+  <?php if($msgPerm): ?>
+    <div id="alert-perm" class="alert alert-<?= h($clsPerm) ?>"><?= h($msgPerm) ?></div>
   <?php endif; ?>
 
   <!-- KPIs -->
@@ -566,12 +789,17 @@ require_once __DIR__.'/navbar.php';
     </div>
   </div>
 
-  <!-- Export + Acción vacaciones -->
+  <!-- Export + Acción vacaciones/incidencias -->
   <div class="d-flex flex-wrap gap-2 mb-3">
     <a class="btn btn-outline-success btn-sm" href="?export=matrix&<?= $qsExport ?>"><i class="bi bi-grid-3x3-gap me-1"></i> Exportar matriz</a>
     <a class="btn btn-outline-primary btn-sm" href="?export=detalles&<?= $qsExport ?>"><i class="bi bi-file-earmark-spreadsheet me-1"></i> Exportar detalles</a>
     <a class="btn btn-outline-secondary btn-sm" href="?export=permisos&<?= $qsExport ?>"><i class="bi bi-clipboard-check me-1"></i> Exportar permisos</a>
-    <button class="btn btn-warning btn-sm ms-auto" data-bs-toggle="modal" data-bs-target="#modalVacaciones">
+
+    <button class="btn btn-outline-dark btn-sm ms-auto" data-bs-toggle="modal" data-bs-target="#modalIncidencia">
+      <i class="bi bi-journal-medical me-1"></i> Agregar incidencias
+    </button>
+
+    <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#modalVacaciones">
       <i class="bi bi-sunglasses me-1"></i> Agregar vacaciones
     </button>
   </div>
@@ -580,7 +808,7 @@ require_once __DIR__.'/navbar.php';
   <div class="card card-elev mb-4">
     <div class="card-header fw-bold d-flex align-items-center justify-content-between">
       <span>Matriz semanal (Mar→Lun) por persona</span>
-      <!-- Leyenda de abreviaturas -->
+      <!-- Leyenda -->
       <div class="small text-muted">
         <span class="pill pill-compact pill-A" title="Asistió">A</span>
         <span class="pill pill-compact pill-R" title="Retardo">R+min</span>
@@ -598,7 +826,7 @@ require_once __DIR__.'/navbar.php';
           <thead class="table-dark thead-sticky">
             <tr>
               <th>Sucursal</th><th>Colaborador</th>
-              <?php $weekNames=['Mar','Mié','Jue','Vie','Sáb','Dom','Lun']; foreach($days as $idx=>$d): ?>
+              <?php foreach($days as $idx=>$d): ?>
                 <th class="text-center"><?= $weekNames[$idx] ?><br><small><?= $d->format('d/m') ?></small></th>
               <?php endforeach; ?>
               <th class="text-end">Asis.</th><th class="text-end">Ret.</th><th class="text-end">Faltas</th><th class="text-end">Perm.</th><th class="text-end">Desc.</th><th class="text-end">Min</th><th class="text-end">Horas</th><th class="text-center">Falta por retardos</th>
@@ -616,7 +844,6 @@ require_once __DIR__.'/navbar.php';
               <td class="fw-semibold"><?= h($fila['usuario']) ?></td>
               <?php foreach($fila['dias'] as $d):
                 $estado=$d['estado'];
-                // Abreviatura y clase
                 $abbr=''; $cls=''; $title='';
                 switch ($estado) {
                   case 'ASISTIÓ':   $abbr='A'; $cls='pill-A'; $title='Asistió'; break;
@@ -652,7 +879,7 @@ require_once __DIR__.'/navbar.php';
     </div>
   </div>
 
-  <!-- === PESTAÑAS: Detalle (con filtro por día) / Permisos === -->
+  <!-- === PESTAÑAS: Detalle / Permisos === -->
   <div class="card card-elev">
     <div class="card-header p-0">
       <ul class="nav nav-tabs card-header-tabs" id="asistTabs" role="tablist">
@@ -672,9 +899,8 @@ require_once __DIR__.'/navbar.php';
     <div class="card-body">
       <div class="tab-content" id="asistTabsContent">
 
-        <!-- TAB: DETALLE (filtro por día) -->
+        <!-- TAB: DETALLE -->
         <div class="tab-pane fade show active" id="tab-detalle" role="tabpanel" aria-labelledby="tab-detalle-tab">
-          <!-- Filtro por día -->
           <form method="get" class="row g-2 align-items-end mb-3">
             <input type="hidden" name="week" value="<?= h($weekIso) ?>">
             <input type="hidden" name="sucursal_id" value="<?= (int)$sucursal_id ?>">
@@ -740,17 +966,48 @@ require_once __DIR__.'/navbar.php';
         <div class="tab-pane fade" id="tab-permisos" role="tabpanel" aria-labelledby="tab-permisos-tab">
           <div class="table-responsive">
             <table class="table table-striped table-xs align-middle mb-0">
-              <thead class="table-dark"><tr><th>Sucursal</th><th>Colaborador</th><th>Fecha</th><th>Motivo</th><th>Comentario</th><th>Status</th><th>Resuelto por</th><th>Obs.</th></tr></thead>
+              <thead class="table-dark">
+                <tr>
+                  <th>Sucursal</th><th>Colaborador</th><th>Fecha</th><th>Motivo</th><th>Comentario</th>
+                  <th>Status</th><th>Resuelto por</th><th>Obs.</th><th style="min-width:260px;">Acciones</th>
+                </tr>
+              </thead>
               <tbody>
               <?php if(!$permisosSemana): ?>
-                <tr><td colspan="8" class="text-muted">Sin permisos en esta semana.</td></tr>
-              <?php else: foreach($permisosSemana as $p): ?>
+                <tr><td colspan="9" class="text-muted">Sin permisos en esta semana.</td></tr>
+              <?php else: foreach($permisosSemana as $p):
+                $isPend = ($p['status']==='Pendiente');
+              ?>
                 <tr>
-                  <td><?= h($p['sucursal']) ?></td><td><?= h($p['usuario']) ?></td><td><?= h($p['fecha']) ?></td>
-                  <td><?= h($p['motivo']) ?></td><td><?= h($p['comentario']??'—') ?></td>
-                  <td><span class="badge <?= $p['status']==='Aprobado'?'bg-success':($p['status']==='Rechazado'?'bg-danger':'bg-warning text-dark') ?>"><?= h($p['status']) ?></span></td>
+                  <td><?= h($p['sucursal']) ?></td>
+                  <td><?= h($p['usuario']) ?></td>
+                  <td><?= h($p['fecha']) ?></td>
+                  <td><?= h($p['motivo']) ?></td>
+                  <td><?= h($p['comentario']??'—') ?></td>
+                  <td>
+                    <span class="badge <?= $p['status']==='Aprobado'?'bg-success':($p['status']==='Rechazado'?'bg-danger':'bg-warning text-dark') ?>">
+                      <?= h($p['status']) ?>
+                    </span>
+                  </td>
                   <td><?= isset($p['aprobado_por']) && $p['aprobado_por']!==null ? (int)$p['aprobado_por'] : '—' ?></td>
                   <td><?= h($p['comentario_aprobador']??'—') ?></td>
+                  <td>
+                    <?php if($isPend): ?>
+                      <form method="post" class="d-flex flex-wrap gap-2 align-items-start">
+                        <input type="hidden" name="csrf" value="<?= h($CSRF) ?>">
+                        <input type="hidden" name="id_permiso" value="<?= (int)$p['id'] ?>">
+                        <input type="text" name="comentario_aprobador" class="form-control form-control-sm w-20rem" placeholder="Comentario (opcional)">
+                        <button name="accion" value="aprobar_permiso" class="btn btn-sm btn-success">
+                          <i class="bi bi-check2-circle"></i> Aprobar
+                        </button>
+                        <button name="accion" value="rechazar_permiso" class="btn btn-sm btn-outline-danger" onclick="return confirm('¿Rechazar este permiso?');">
+                          <i class="bi bi-x-circle"></i> Rechazar
+                        </button>
+                      </form>
+                    <?php else: ?>
+                      <span class="text-muted">—</span>
+                    <?php endif; ?>
+                  </td>
                 </tr>
               <?php endforeach; endif; ?>
               </tbody>
@@ -808,13 +1065,72 @@ require_once __DIR__.'/navbar.php';
   </div>
 </div>
 
-<!-- Bootstrap JS para tabs y modal -->
+<!-- MODAL: Alta de Incidencia -->
+<div class="modal fade" id="modalIncidencia" tabindex="-1" aria-labelledby="modalIncidenciaLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post">
+        <input type="hidden" name="accion" value="alta_incidencia">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalIncidenciaLabel">Agregar incidencia</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Colaborador *</label>
+            <select name="id_usuario" class="form-select" required>
+              <option value="">Seleccione…</option>
+              <?php foreach($usuarios as $u): ?>
+                <option value="<?= (int)$u['id'] ?>"><?= h($u['sucursal'].' · '.$u['nombre']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Fecha de incidencia *</label>
+            <input type="date" name="fecha_incidencia" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Tipo de incidencia *</label>
+            <select name="tipo_incidencia" class="form-select" required>
+              <option value="">Seleccione…</option>
+              <option value="Falta justificada">Falta justificada</option>
+              <option value="Permiso">Permiso</option>
+              <option value="Incapacidad">Incapacidad</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Comentario (opcional)</label>
+            <textarea name="comentario" rows="2" class="form-control" placeholder="Notas internas (diagnóstico, folio, etc.)"></textarea>
+          </div>
+          <p class="text-muted small mb-0">
+            La incidencia se guardará como <strong>aprobada</strong> por el administrador y contará como permiso en la matriz.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button class="btn btn-dark">Guardar incidencia</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Bootstrap JS para tabs y modal (si tu layout ya lo incluye, omite esta línea) -->
 <!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script> -->
+
 <?php if($msgVac && $clsVac==='danger'): ?>
 <script>
-// Si hubo error en el alta, reabrimos el modal para corregir
+// Si hubo error en el alta, reabrimos el modal de vacaciones para corregir
 const vacModal = new bootstrap.Modal(document.getElementById('modalVacaciones'));
 vacModal.show();
+</script>
+<?php endif; ?>
+
+<?php if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['accion'] ?? '')==='alta_incidencia' && $msgPerm && $clsPerm==='danger'): ?>
+<script>
+// Si hubo error en el alta de incidencia, reabrimos el modal
+const incModal = new bootstrap.Modal(document.getElementById('modalIncidencia'));
+incModal.show();
 </script>
 <?php endif; ?>
 </body>

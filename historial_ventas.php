@@ -7,10 +7,9 @@ if (!isset($_SESSION['id_usuario'])) {
 }
 
 include 'db.php';
-date_default_timezone_set('America/Mexico_City');
 
 /* =========================================================
-   Helpers
+   Helpers de compatibilidad de esquema
 ========================================================= */
 function hasColumn(mysqli $conn, string $table, string $column): bool {
     $tableEsc  = $conn->real_escape_string($table);
@@ -27,49 +26,32 @@ function hasColumn(mysqli $conn, string $table, string $column): bool {
     return $res && $res->num_rows > 0;
 }
 
-/** Base del proyecto para cuando corre bajo subcarpeta (p.ej. /miplan) */
-function app_base_path(): string {
-    $script = $_SERVER['SCRIPT_NAME'] ?? '';
-    $dir = rtrim(str_replace('\\','/', dirname($script)), '/');
-    return ($dir === '/' ? '' : $dir);
-}
-
-/** Normaliza una ruta guardada a URL navegable */
-function url_publica(?string $ruta): string {
-    $ruta = trim((string)$ruta);
-    if ($ruta === '') return '';
-    if (preg_match('#^https?://#i', $ruta)) return $ruta; // ya es absoluta
-    $base = app_base_path();
-    if ($ruta[0] === '/') return $base . $ruta;           // /uploads/... -> /miplan/uploads/...
-    return $base . '/' . $ruta;                           // uploads/...
-}
-
 function obtenerSemanaPorIndice($offset = 0) {
-    $tz = new DateTimeZone('America/Mexico_City');
-    $hoy = new DateTime('now', $tz);
-    $diaSemana = (int)$hoy->format('N'); // 1=lunes ... 7=domingo
-    $dif = $diaSemana - 2;               // martes=2
+    $hoy = new DateTime();
+    $diaSemana = $hoy->format('N'); // 1=lunes ... 7=domingo
+    $dif = $diaSemana - 2;          // martes=2
     if ($dif < 0) $dif += 7;
 
-    $inicio = new DateTime('now', $tz);
+    $inicio = new DateTime();
     $inicio->modify("-$dif days")->setTime(0,0,0);
 
-    if ($offset > 0) $inicio->modify("-" . (7*$offset) . " days");
+    if ($offset > 0) {
+        $inicio->modify("-" . (7*$offset) . " days");
+    }
 
     $fin = clone $inicio;
     $fin->modify("+6 days")->setTime(23,59,59);
+
     return [$inicio, $fin];
 }
 
-function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
-
-/* =========================================================
-   Semana/filtros base
-========================================================= */
+// Semana seleccionada (para filtros/listado)
 $semanaSeleccionada = isset($_GET['semana']) ? (int)$_GET['semana'] : 0;
 list($inicioSemanaObj, $finSemanaObj) = obtenerSemanaPorIndice($semanaSeleccionada);
 $inicioSemana = $inicioSemanaObj->format('Y-m-d');
 $finSemana    = $finSemanaObj->format('Y-m-d');
+
+// Rango de la semana ACTUAL (para permitir edición)
 list($inicioActualObj, $finActualObj) = obtenerSemanaPorIndice(0);
 
 $msg                 = $_GET['msg'] ?? '';
@@ -78,69 +60,47 @@ $ROL                 = $_SESSION['rol'] ?? '';
 $idUsuarioSesion     = (int)($_SESSION['id_usuario'] ?? 0);
 
 /* =========================================================
-   Sucursal seleccionada (nuevo filtro)
-   - Admin/GerenteZona/Super: puede elegir cualquier sucursal
-   - Gerente: forzado a su sucursal
-   - Ejecutivo: no aplica (ve solo sus ventas)
+   Sucursal seleccionada
+   - SOLO Admin ve y puede elegir; default: TODAS (0)
+   - Otros roles: quedan amarrados a su sucursal de sesión
 ========================================================= */
-$ROLES_CON_SUCURSAL_LIBRE = ['Admin','GerenteZona','Super'];
-$sucursalSel = 0;
+$puedeElegirSucursal   = ($ROL === 'Admin');
+$sucursalSeleccionada  = $puedeElegirSucursal ? (int)($_GET['sucursal'] ?? 0) : 0; // Admin default 0 (Todas)
+$sucursalFiltro        = $puedeElegirSucursal ? $sucursalSeleccionada : $id_sucursal_sesion;
 
-if (in_array($ROL, $ROLES_CON_SUCURSAL_LIBRE, true)) {
-    $sucursalSel = (int)($_GET['sucursal'] ?? 0); // 0 = todas
-} elseif ($ROL === 'Gerente') {
-    $sucursalSel = $id_sucursal_sesion;          // forzado
-} else {
-    $sucursalSel = 0; // Ejecutivo ignora sucursal (filtra por usuario más abajo)
-}
-
-/* =========================================================
-   Subtipo sucursal (para ocultar comisiones a Subdistribuidor)
-   - Si hay sucursal seleccionada, tomamos esa; si no, la de sesión
-========================================================= */
+// Subtipo/Nombre de la sucursal (según filtro) — para header
 $subtipoSucursal = '';
-$sucursalParaSubtipo = $sucursalSel > 0 ? $sucursalSel : $id_sucursal_sesion;
-if ($sucursalParaSubtipo) {
-    if ($st = $conn->prepare("SELECT subtipo FROM sucursales WHERE id = ? LIMIT 1")) {
-        $st->bind_param("i", $sucursalParaSubtipo);
-        $st->execute();
-        $rowSub = $st->get_result()->fetch_assoc();
-        $subtipoSucursal = $rowSub['subtipo'] ?? '';
-        $st->close();
-    }
+$nombreSucursalFiltro = '';
+if ($sucursalFiltro) {
+    $stmtSub = $conn->prepare("SELECT nombre, subtipo FROM sucursales WHERE id = ? LIMIT 1");
+    $stmtSub->bind_param("i", $sucursalFiltro);
+    $stmtSub->execute();
+    $rowSub = $stmtSub->get_result()->fetch_assoc();
+    $nombreSucursalFiltro = $rowSub['nombre'] ?? '';
+    $subtipoSucursal      = $rowSub['subtipo'] ?? '';
+    $stmtSub->close();
 }
 $esSubdistribuidor = ($subtipoSucursal === 'Subdistribuidor');
 
+// Catálogo de sucursales para combo (solo Admin)
+$listaSucursales = [];
+if ($puedeElegirSucursal) {
+    $rsSuc = $conn->query("SELECT id, nombre FROM sucursales ORDER BY nombre");
+    while ($r = $rsSuc->fetch_assoc()) {
+        $listaSucursales[] = $r;
+    }
+}
+
 /* =========================================================
-   Detección columna tipo de producto
+   Detección del nombre de columna de tipo de producto
 ========================================================= */
 $colTipoProd = hasColumn($conn, 'productos', 'tipo') ? 'tipo' : 'tipo_producto';
 
 /* =========================================================
-   Catálogo de sucursales (para el combo nuevo)
-========================================================= */
-$sucursales = [];
-if (in_array($ROL, $ROLES_CON_SUCURSAL_LIBRE, true)) {
-    $whereSuc = '1=1';
-    if (hasColumn($conn, 'sucursales', 'activo')) {
-        $whereSuc = 'activo = 1';
-    }
-    $rsSuc = $conn->query("SELECT id, nombre FROM sucursales WHERE {$whereSuc} ORDER BY nombre ASC");
-    while ($row = $rsSuc->fetch_assoc()) {
-        $sucursales[] = $row;
-    }
-} elseif ($ROL === 'Gerente' && $id_sucursal_sesion) {
-    $st = $conn->prepare("SELECT id, nombre FROM sucursales WHERE id = ? LIMIT 1");
-    $st->bind_param("i", $id_sucursal_sesion);
-    $st->execute();
-    if ($r = $st->get_result()->fetch_assoc()) $sucursales[] = $r;
-    $st->close();
-}
-
-/* =========================================================
-   Usuarios para filtro (activos + inactivos con ventas) de la sucursal vigente
-   - Si no hay sucursal seleccionada (Admin) usamos la de sesión SOLO para el combo,
-     pero no forzamos filtro en ventas hasta que elija sucursal.
+   Usuarios para filtro:
+   - SIEMPRE activos de la sucursal filtrada (si se eligió una)
+   - INACTIVOS solo si tuvieron ventas en la semana seleccionada
+   Compat esquema: activo / estatus / fecha_baja
 ========================================================= */
 $activosExpr = '';
 if (hasColumn($conn, 'usuarios', 'activo')) {
@@ -152,7 +112,8 @@ if (hasColumn($conn, 'usuarios', 'activo')) {
 }
 
 $existsVentas = "EXISTS (
-    SELECT 1 FROM ventas v
+    SELECT 1
+    FROM ventas v
     WHERE v.id_usuario = u.id
       AND DATE(v.fecha_venta) BETWEEN ? AND ?
 )";
@@ -161,65 +122,89 @@ $esInactivoCase = $activosExpr
     ? "CASE WHEN {$activosExpr} THEN 0 ELSE 1 END"
     : "CASE WHEN {$existsVentas} THEN 1 ELSE 0 END";
 
-$baseSucursalUsuarios = ($sucursalSel > 0) ? $sucursalSel : $id_sucursal_sesion;
-$usuariosActivos = $usuariosInactivos = [];
-
-if ($baseSucursalUsuarios > 0) {
+/* 
+   Lista de usuarios:
+   - Si Admin y 'Todas' (0): NO filtramos por u.id_sucursal
+   - Si Admin y una sucursal (>0): filtramos por esa sucursal
+   - Si no Admin: usamos sucursal de sesión
+*/
+if ($puedeElegirSucursal && $sucursalFiltro === 0) {
     $sqlUsuarios = "
-        SELECT u.id, u.nombre, {$esInactivoCase} AS es_inactivo
+        SELECT u.id, u.nombre,
+               {$esInactivoCase} AS es_inactivo
         FROM usuarios u
-        WHERE u.id_sucursal = ?
-          AND (" . ($activosExpr ? "{$activosExpr} OR " : "") . "{$existsVentas})
+        WHERE
+          " . ($activosExpr ? "({$activosExpr}) OR " : "") . "
+          {$existsVentas}
         ORDER BY es_inactivo ASC, u.nombre ASC
     ";
     $stmtUsuarios = $conn->prepare($sqlUsuarios);
-    $stmtUsuarios->bind_param("iss", $baseSucursalUsuarios, $inicioSemana, $finSemana);
-    $stmtUsuarios->execute();
-    $resUsuarios = $stmtUsuarios->get_result();
-    while ($row = $resUsuarios->fetch_assoc()) {
-        ((int)$row['es_inactivo'] === 1) ? $usuariosInactivos[] = $row : $usuariosActivos[] = $row;
-    }
-    $stmtUsuarios->close();
+    $stmtUsuarios->bind_param("ss", $inicioSemana, $finSemana);
+} else {
+    $sqlUsuarios = "
+        SELECT u.id, u.nombre,
+               {$esInactivoCase} AS es_inactivo
+        FROM usuarios u
+        WHERE u.id_sucursal = ?
+          AND (
+                " . ($activosExpr ? "{$activosExpr} OR " : "") . "
+                {$existsVentas}
+              )
+        ORDER BY es_inactivo ASC, u.nombre ASC
+    ";
+    $stmtUsuarios = $conn->prepare($sqlUsuarios);
+    $stmtUsuarios->bind_param("iss", $sucursalFiltro, $inicioSemana, $finSemana);
 }
+$stmtUsuarios->execute();
+$resUsuarios = $stmtUsuarios->get_result();
+
+$usuariosActivos = [];
+$usuariosInactivos = [];
+while ($row = $resUsuarios->fetch_assoc()) {
+    if ((int)$row['es_inactivo'] === 1) {
+        $usuariosInactivos[] = $row;
+    } else {
+        $usuariosActivos[] = $row;
+    }
+}
+$stmtUsuarios->close();
 
 /* =========================================================
-   WHERE base para ventas
+   WHERE base para consultas de ventas (afecta métricas y listado)
 ========================================================= */
 $where  = " WHERE DATE(v.fecha_venta) BETWEEN ? AND ?";
 $params = [$inicioSemana, $finSemana];
 $types  = "ss";
 
-/* Rol: Ejecutivo => solo sus ventas */
+// Filtro por rol + sucursal
 if ($ROL === 'Ejecutivo') {
     $where .= " AND v.id_usuario=?";
-    $params[] = $idUsuarioSesion; $types .= "i";
-}
-
-/* Rol: Gerente => forzar sucursal de sesión */
-if ($ROL === 'Gerente' && $id_sucursal_sesion > 0) {
+    $params[] = $idUsuarioSesion;
+    $types .= "i";
+} elseif ($ROL === 'Gerente') {
     $where .= " AND v.id_sucursal=?";
-    $params[] = $id_sucursal_sesion; $types .= "i";
+    $params[] = $id_sucursal_sesion;
+    $types .= "i";
+} else {
+    // Admin: puede filtrar todas o por una
+    if ($puedeElegirSucursal && $sucursalFiltro > 0) {
+        $where .= " AND v.id_sucursal=?";
+        $params[] = $sucursalFiltro;
+        $types .= "i";
+    }
 }
 
-/* Roles con selector de sucursal */
-if (in_array($ROL, $ROLES_CON_SUCURSAL_LIBRE, true) && $sucursalSel > 0) {
-    $where .= " AND v.id_sucursal=?";
-    $params[] = $sucursalSel; $types .= "i";
-}
-
-/* Filtro adicional: tipo de venta */
+// Filtros GET
 if (!empty($_GET['tipo_venta'])) {
     $where .= " AND v.tipo_venta=?";
-    $params[] = $_GET['tipo_venta']; $types .= "s";
+    $params[] = $_GET['tipo_venta'];
+    $types .= "s";
 }
-
-/* Filtro adicional: usuario */
 if (!empty($_GET['usuario'])) {
     $where .= " AND v.id_usuario=?";
-    $params[] = (int)$_GET['usuario'];   $types .= "i";
+    $params[] = $_GET['usuario'];
+    $types .= "i";
 }
-
-/* Búsqueda */
 if (!empty($_GET['buscar'])) {
     $where .= " AND (v.nombre_cliente LIKE ? OR v.telefono_cliente LIKE ? OR v.tag LIKE ?
                      OR EXISTS(SELECT 1 FROM detalle_venta dv WHERE dv.id_venta=v.id AND dv.imei1 LIKE ?))";
@@ -229,9 +214,10 @@ if (!empty($_GET['buscar'])) {
 }
 
 /* =========================================================
-   Métricas
+   MÉTRICAS PARA CARDS
 ========================================================= */
-// Unidades / módems
+
+// Unidades sin módem y módems (detalle_venta)
 $sqlUnits = "
     SELECT
       SUM(CASE WHEN LOWER(COALESCE(p.$colTipoProd,'')) IN ('modem','mifi') THEN 0 ELSE 1 END) AS unidades_sin_modem,
@@ -245,20 +231,23 @@ $stU = $conn->prepare($sqlUnits);
 $stU->bind_param($types, ...$params);
 $stU->execute();
 $rowU = $stU->get_result()->fetch_assoc();
-$totalUnidades       = (int)($rowU['unidades_sin_modem'] ?? 0);
-$totalModemsUnidades = (int)($rowU['unidades_modem'] ?? 0);
+$totalUnidades          = (int)($rowU['unidades_sin_modem'] ?? 0);
+$totalModemsUnidades    = (int)($rowU['unidades_modem'] ?? 0);
 $stU->close();
 
-// Combos
-$sqlCombos = "SELECT SUM(CASE WHEN LOWER(v.tipo_venta)='financiamiento+combo' THEN 1 ELSE 0 END) AS combos_u
-              FROM ventas v $where";
+// Combos (1 unidad por venta Financiamiento+Combo)
+$sqlCombos = "
+  SELECT SUM(CASE WHEN LOWER(v.tipo_venta)='financiamiento+combo' THEN 1 ELSE 0 END) AS combos_u
+  FROM ventas v
+  $where
+";
 $stC = $conn->prepare($sqlCombos);
 $stC->bind_param($types, ...$params);
 $stC->execute();
 $totalCombosUnidades = (int)($stC->get_result()->fetch_assoc()['combos_u'] ?? 0);
 $stC->close();
 
-// Monto (excluye ventas solo-módem)
+// Monto vendido excluyendo ventas solo-módem
 $sqlMonto = "
   SELECT IFNULL(SUM(CASE WHEN d.has_non_modem=1 THEN v.precio_venta ELSE 0 END),0) AS total_monto
   FROM ventas v
@@ -292,19 +281,17 @@ $totalComisiones = (float)($resumen['total_comisiones'] ?? 0);
 $stmtResumen->close();
 
 /* =========================================================
-   Datos del listado (incluye rutas de docs) + sucursal
+   Datos del listado
 ========================================================= */
+// Ventas (con enganche y comentarios)
 $sqlVentas = "
     SELECT v.id, v.tag, v.nombre_cliente, v.telefono_cliente, v.tipo_venta,
            v.precio_venta, v.fecha_venta,
            v.enganche, v.forma_pago_enganche, v.enganche_efectivo, v.enganche_tarjeta,
-           v.comentarios, v.imagen_identificacion, v.imagen_contrato,
-           v.id_sucursal,
-           u.id AS id_usuario, u.nombre AS usuario,
-           COALESCE(s.nombre, CONCAT('Sucursal #', v.id_sucursal)) AS sucursal_nombre
+           v.comentarios,
+           u.id AS id_usuario, u.nombre AS usuario
     FROM ventas v
-    INNER JOIN usuarios u    ON v.id_usuario = u.id
-    LEFT  JOIN sucursales s  ON s.id = v.id_sucursal
+    INNER JOIN usuarios u ON v.id_usuario = u.id
     $where
     ORDER BY v.fecha_venta DESC
 ";
@@ -328,6 +315,24 @@ $detalles = [];
 while ($row = $detalleResult->fetch_assoc()) {
     $detalles[$row['id_venta']][] = $row;
 }
+
+function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+
+// Meses en español para el selector mensual
+$MESES_ES = [
+    1 => 'Enero',
+    2 => 'Febrero',
+    3 => 'Marzo',
+    4 => 'Abril',
+    5 => 'Mayo',
+    6 => 'Junio',
+    7 => 'Julio',
+    8 => 'Agosto',
+    9 => 'Septiembre',
+    10 => 'Octubre',
+    11 => 'Noviembre',
+    12 => 'Diciembre',
+];
 ?>
 <!DOCTYPE html>
 <html lang="es" data-bs-theme="light">
@@ -349,14 +354,14 @@ while ($row = $detalleResult->fetch_assoc()) {
     .chip{ display:inline-flex; align-items:center; gap:.4rem; padding:.25rem .6rem; border-radius:999px; font-weight:600; font-size:.85rem; border:1px solid transparent; }
     .chip-info{ background:#e8f0fe; color:#1a56db; border-color:#cbd8ff; }
     .chip-success{ background:#e7f8ef; color:#0f7a3d; border-color:#b7f1cf; }
-    .chip-branch{ background:#e9f7ff; color:#0b6b8e; border-color:#c7ebfa; }
+    .chip-warn{ background:#fff6e6; color:#9a6200; border-color:#ffe1a8; }
     .btn-soft{ border:1px solid rgba(0,0,0,.08); background:#fff; }
     .btn-soft:hover{ background:#f9fafb; }
     .filters .form-control, .filters .form-select { height:42px; }
     .accordion-button{ gap:.5rem; }
     .venta-head .tag{ font-weight:700; }
+    .sticky-tools{ position:sticky; top:0; z-index:2; background:var(--surface); }
     .comentarios-box{ background:#fffdf6; border:1px dashed #ffdca8; border-radius:12px; padding:.6rem .8rem; color:#7a591f; }
-    .doc-frame{ width:100%; height:70vh; border:0; }
   </style>
 </head>
 <body>
@@ -367,8 +372,11 @@ while ($row = $detalleResult->fetch_assoc()) {
     <div>
       <h1 class="page-title">🧾 Historial de Ventas</h1>
       <div class="small-muted">
-        Usuario: <strong><?= h($_SESSION['nombre']) ?></strong> · Semana:
-        <strong><?= $inicioSemanaObj->format('d/m/Y') ?> – <?= $finSemanaObj->format('d/m/Y') ?></strong>
+        Usuario: <strong><?= h($_SESSION['nombre']) ?></strong>
+        <?php if ($puedeElegirSucursal): ?>
+          · Sucursal: <strong><?= $sucursalFiltro ? h($nombreSucursalFiltro) : 'Todas' ?></strong>
+        <?php endif; ?>
+        · Semana: <strong><?= $inicioSemanaObj->format('d/m/Y') ?> – <?= $finSemanaObj->format('d/m/Y') ?></strong>
       </div>
     </div>
     <div class="d-flex align-items-center gap-2">
@@ -376,7 +384,7 @@ while ($row = $detalleResult->fetch_assoc()) {
       <span class="chip chip-success"><i class="bi bi-bag-check"></i> Unidades: <?= (int)$totalUnidades ?></span>
       <span class="chip chip-success"><i class="bi bi-currency-dollar"></i> Monto: $<?= number_format($totalMonto,2) ?></span>
       <?php if (!$esSubdistribuidor): ?>
-        <span class="chip chip-success"><i class="bi bi-coin"></i> Comisiones: $<?= number_format($totalComisiones,2) ?></span>
+        <span class="chip chip-warn"><i class="bi bi-coin"></i> Comisiones: $<?= number_format($totalComisiones,2) ?></span>
       <?php endif; ?>
     </div>
   </div>
@@ -462,32 +470,17 @@ while ($row = $detalleResult->fetch_assoc()) {
         </select>
       </div>
 
-      <?php if (!empty($sucursales) && in_array($ROL, $ROLES_CON_SUCURSAL_LIBRE, true)): ?>
+      <?php if ($puedeElegirSucursal): ?>
       <div class="col-md-3">
         <label class="small-muted">Sucursal</label>
         <select name="sucursal" class="form-select" onchange="this.form.submit()">
-          <option value="0">Todas</option>
-          <?php foreach ($sucursales as $s): ?>
-            <option value="<?= (int)$s['id'] ?>" <?= ((int)($s['id'])===$sucursalSel)?'selected':'' ?>>
+          <option value="0" <?= $sucursalFiltro===0?'selected':'' ?>>Todas</option>
+          <?php foreach ($listaSucursales as $s): ?>
+            <option value="<?= (int)$s['id'] ?>" <?= ($sucursalFiltro==(int)$s['id'])?'selected':'' ?>>
               <?= h($s['nombre']) ?>
             </option>
           <?php endforeach; ?>
         </select>
-      </div>
-      <?php elseif ($ROL === 'Gerente' && $id_sucursal_sesion): ?>
-      <div class="col-md-3">
-        <label class="small-muted">Sucursal</label>
-        <input class="form-control" value="<?php
-          $n = '';
-          if ($st = $conn->prepare('SELECT nombre FROM sucursales WHERE id=?')) {
-              $st->bind_param('i', $id_sucursal_sesion);
-              $st->execute();
-              $n = ($st->get_result()->fetch_column() ?: '');
-              $st->close();
-          }
-          echo h($n);
-        ?>" disabled>
-        <input type="hidden" name="sucursal" value="<?= (int)$id_sucursal_sesion ?>">
       </div>
       <?php endif; ?>
 
@@ -543,6 +536,64 @@ while ($row = $detalleResult->fetch_assoc()) {
     </div>
   </form>
 
+  <!-- 🔽 NUEVO BLOQUE: Descarga mensual solo para Admin -->
+  <?php if ($ROL === 'Admin'): ?>
+    <div class="card card-surface p-3 mt-2">
+      <div class="d-flex flex-wrap align-items-end gap-3">
+        <div>
+          <h6 class="mb-1">
+            <i class="bi bi-calendar3 me-1"></i>Descargar ventas de un mes completo
+          </h6>
+          <div class="small-muted">
+            Exporta todas las ventas del mes seleccionado.  
+            Se respeta el filtro de sucursal elegido en los filtros de arriba.
+          </div>
+        </div>
+        <form method="GET" action="exportar_ventas_mes.php" class="ms-auto d-flex flex-wrap align-items-end gap-2">
+          <!-- Sucursal actual aplicada en el historial -->
+          <input type="hidden" name="sucursal" value="<?= (int)$sucursalFiltro ?>">
+
+          <div>
+            <label class="small-muted mb-0">Mes</label>
+            <select name="mes" class="form-select form-select-sm" required>
+              <?php
+                $mesActual = (int)date('n');
+                foreach ($MESES_ES as $numMes => $nombreMes):
+              ?>
+                <option value="<?= $numMes ?>" <?= $numMes === $mesActual ? 'selected' : '' ?>>
+                  <?= $nombreMes ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+
+          <div>
+            <label class="small-muted mb-0">Año</label>
+            <select name="anio" class="form-select form-select-sm" required>
+              <?php
+                $anioActual = (int)date('Y');
+                // Rango simple: 3 años hacia atrás y 1 hacia adelante por si cierran adelantado
+                for ($y = $anioActual - 3; $y <= $anioActual + 1; $y++):
+              ?>
+                <option value="<?= $y ?>" <?= $y === $anioActual ? 'selected' : '' ?>>
+                  <?= $y ?>
+                </option>
+              <?php endfor; ?>
+            </select>
+          </div>
+
+          <div class="mb-0">
+            <label class="small-muted mb-0 d-block">&nbsp;</label>
+            <button class="btn btn-success btn-sm">
+              <i class="bi bi-file-earmark-excel"></i> Descargar mes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  <?php endif; ?>
+  <!-- 🔼 FIN BLOQUE DESCARGA MENSUAL -->
+
   <!-- Historial (accordion) -->
   <?php if ($totalVentas === 0): ?>
     <div class="alert alert-info card-surface mt-3 mb-0">
@@ -552,39 +603,39 @@ while ($row = $detalleResult->fetch_assoc()) {
     <div class="accordion mt-3" id="ventasAccordion">
       <?php $idx = 0; while ($venta = $ventas->fetch_assoc()): $idx++; ?>
         <?php
+          // Permisos y ventana actual
           $esPropia = ((int)$venta['id_usuario'] === $idUsuarioSesion);
+
           $fechaVentaDT = new DateTime($venta['fecha_venta']);
           $enSemanaActual = ($fechaVentaDT >= $inicioActualObj && $fechaVentaDT <= $finActualObj);
-          $puedeEliminar = ($ROL === 'Admin');
+
+          $puedeEliminar = ($ROL === 'Admin'); // eliminar solo admin
           $puedeEditar   = (in_array($ROL, ['Ejecutivo','Gerente']) && $esPropia && $enSemanaActual);
 
+          // icono tipo
+          $chipIcon = 'bi-tag';
+          if ($venta['tipo_venta'] === 'Contado') $chipIcon = 'bi-cash-coin';
+          elseif ($venta['tipo_venta'] === 'Financiamiento') $chipIcon = 'bi-bank';
+          elseif ($venta['tipo_venta'] === 'Financiamiento+Combo') $chipIcon = 'bi-box-seam';
+
           $accId = "venta".$idx;
-
-          $urlIdent = url_publica($venta['imagen_identificacion'] ?? '');
-          $urlCto   = url_publica($venta['imagen_contrato'] ?? '');
-          $extCto   = strtolower(pathinfo($urlCto ?: '', PATHINFO_EXTENSION));
-          $tipoCto  = ($extCto === 'pdf') ? 'pdf' : 'img';
-
-          $sucursalTxt = trim((string)$venta['sucursal_nombre']);
-          $formaTxt    = trim((string)$venta['forma_pago_enganche']); // método de pago
         ?>
         <div class="accordion-item card-surface mb-2">
           <h2 class="accordion-header" id="h<?= $accId ?>">
             <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#c<?= $accId ?>" aria-expanded="<?= $idx===1?'true':'false' ?>" aria-controls="c<?= $accId ?>">
               <div class="venta-head d-flex flex-wrap align-items-center gap-2">
-                <!-- Orden solicitado: ID, Sucursal, fecha, TAG, Cliente, Usuario, método de pago, monto, enganche -->
                 <span class="badge text-bg-secondary">#<?= (int)$venta['id'] ?></span>
-                <span class="chip chip-branch"><i class="bi bi-geo-alt"></i> <?= h($sucursalTxt) ?></span>
-                <span class="ms-2"><i class="bi bi-calendar-event"></i> <?= h($venta['fecha_venta']) ?></span>
+                <span class="chip chip-info"><i class="bi <?= $chipIcon ?>"></i> <?= h($venta['tipo_venta']) ?></span>
                 <span class="tag">TAG: <?= h($venta['tag']) ?></span>
                 <span>Cliente: <strong><?= h($venta['nombre_cliente']) ?></strong> (<?= h($venta['telefono_cliente']) ?>)</span>
+                <span class="ms-2"><i class="bi bi-calendar-event"></i> <?= h($venta['fecha_venta']) ?></span>
                 <span class="ms-2"><i class="bi bi-person"></i> <?= h($venta['usuario']) ?></span>
-                <?php if ($formaTxt !== ''): ?>
-                  <span class="ms-2"><i class="bi bi-credit-card-2-front"></i> <?= h($formaTxt) ?></span>
-                <?php endif; ?>
                 <span class="ms-2 fw-semibold"><i class="bi bi-currency-dollar"></i> $<?= number_format((float)$venta['precio_venta'],2) ?></span>
                 <span class="ms-2 chip chip-success">
                   <i class="bi bi-wallet2"></i> Enganche: $<?= number_format((float)$venta['enganche'],2) ?>
+                  <?php if (!empty($venta['forma_pago_enganche'])): ?>
+                    &nbsp;(<em><?= h($venta['forma_pago_enganche']) ?></em>)
+                  <?php endif; ?>
                 </span>
                 <?php if (!$enSemanaActual): ?>
                   <span class="ms-2 badge rounded-pill text-bg-secondary">Fuera de semana actual</span>
@@ -596,32 +647,6 @@ while ($row = $detalleResult->fetch_assoc()) {
             <div class="accordion-body">
 
               <div class="d-flex justify-content-end gap-2 mb-2">
-                <?php if ($urlIdent): ?>
-                  <button
-                    class="btn btn-outline-secondary btn-sm btn-ver-doc"
-                    data-bs-toggle="modal"
-                    data-bs-target="#docModal"
-                    data-url="<?= h($urlIdent) ?>"
-                    data-titulo="Identificación · Venta #<?= (int)$venta['id'] ?>"
-                    data-tipo="img"
-                  >
-                    <i class="bi bi-image"></i> Ver Identificación
-                  </button>
-                <?php endif; ?>
-
-                <?php if ($urlCto): ?>
-                  <button
-                    class="btn btn-outline-secondary btn-sm btn-ver-doc"
-                    data-bs-toggle="modal"
-                    data-bs-target="#docModal"
-                    data-url="<?= h($urlCto) ?>"
-                    data-titulo="Contrato · Venta #<?= (int)$venta['id'] ?>"
-                    data-tipo="<?= h($tipoCto) ?>"
-                  >
-                    <i class="bi <?= $tipoCto==='pdf' ? 'bi-filetype-pdf' : 'bi-file-image' ?>"></i> Ver Contrato
-                  </button>
-                <?php endif; ?>
-
                 <?php if ($puedeEditar): ?>
                   <button 
                     class="btn btn-outline-primary btn-sm btn-edit-venta"
@@ -722,25 +747,7 @@ while ($row = $detalleResult->fetch_assoc()) {
 
 </div>
 
-<!-- Modal visor de documentos -->
-<div class="modal fade" id="docModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="docModalTitle">Documento</h5>
-        <a class="btn btn-outline-secondary btn-sm" id="docModalOpen" target="_blank" rel="noopener">
-          <i class="bi bi-box-arrow-up-right"></i> Abrir en pestaña
-        </a>
-        <button type="button" class="btn-close ms-2" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-      </div>
-      <div class="modal-body" id="docModalBody">
-        <!-- aquí se inyecta <img> o <iframe> -->
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Modal: Editar venta -->
+<!-- Modal: Editar venta (Ejecutivo/Gerente solo propias y semana actual) -->
 <div class="modal fade" id="editarVentaModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <form action="editar_venta.php" method="POST" class="modal-content">
@@ -805,7 +812,7 @@ while ($row = $detalleResult->fetch_assoc()) {
       <div class="modal-body">
         <input type="hidden" name="id_venta" id="modalIdVenta">
         <p class="mb-0">¿Seguro que deseas eliminar esta venta? <br>
-        <small class="text-muted">Esto devolverá los equipos al inventario, quitará la comisión y borrará su documentación.</small></p>
+        <small class="text-muted">Esto devolverá los equipos al inventario y quitará la comisión.</small></p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -815,7 +822,7 @@ while ($row = $detalleResult->fetch_assoc()) {
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script> -->
 <script>
 // Modal eliminar (Admin)
 const modalDel = document.getElementById('confirmEliminarModal');
@@ -828,6 +835,7 @@ if (modalDel) {
 }
 
 // Modal editar (Ejecutivo/Gerente propios)
+// TAG requerido solo si tipo != 'Contado'
 document.querySelectorAll('.btn-edit-venta').forEach(btn => {
   btn.addEventListener('click', () => {
     document.getElementById('ev_id_venta').value = btn.dataset.id || '';
@@ -847,34 +855,6 @@ document.querySelectorAll('.btn-edit-venta').forEach(btn => {
       ? 'Obligatorio para Financiamiento / Financiamiento+Combo.'
       : 'Opcional en ventas de Contado.';
   });
-});
-
-// Modal visor de documentos
-const docModal = document.getElementById('docModal');
-docModal?.addEventListener('show.bs.modal', (ev) => {
-  const btn = ev.relatedTarget;
-  const url = btn?.getAttribute('data-url') || '';
-  const titulo = btn?.getAttribute('data-titulo') || 'Documento';
-  const tipo = btn?.getAttribute('data-tipo') || 'img';
-
-  document.getElementById('docModalTitle').textContent = titulo;
-  const open = document.getElementById('docModalOpen');
-  open.href = url;
-
-  const body = document.getElementById('docModalBody');
-  body.innerHTML = '';
-  if (tipo === 'pdf') {
-    const iframe = document.createElement('iframe');
-    iframe.src = url + '#toolbar=0&view=FitH';
-    iframe.className = 'doc-frame';
-    body.appendChild(iframe);
-  } else {
-    const img = document.createElement('img');
-    img.src = url;
-    img.alt = titulo;
-    img.className = 'img-fluid';
-    body.appendChild(img);
-  }
 });
 </script>
 </body>
