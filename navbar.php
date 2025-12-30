@@ -220,11 +220,12 @@ $grpInventario = [
   'inventario_global.php',
   'inventario_resumen.php',
   'inventario_general.php',
-  'inventario_retiros.php',
+  'inventario_retiros_v2.php',
   'generar_traspaso_zona.php',
   'traspasos_pendientes_zona.php',
   'inventario_sims_resumen.php',
-  'retiro_sims.php'
+  'retiro_sims.php',
+  'payjoy_tc_inventario.php'
 ];
 
 $grpCompras    = ['compras_nueva.php', 'compras_resumen.php', 'modelos.php', 'proveedores.php', 'compras_ingreso.php'];
@@ -693,7 +694,7 @@ function item_active(string $f, string $c): string
               <li><a class="dropdown-item <?= item_active('historial_ventas_sims.php', $current) ?>" href="historial_ventas_sims.php">Historial ventas SIM</a></li>
               <li><a class="dropdown-item <?= item_active('historial_payjoy_tc.php', $current) ?>" href="historial_payjoy_tc.php">Historial PayJoy TC</a></li>
               <li><a class="dropdown-item <?= item_active('historial_ventas_accesorios.php', $current) ?>" href="historial_ventas_accesorios.php">Historial ventas accesorios</a></li>
-              <li><a class="dropdown-item <?= item_active('historial_recargas.php', $current) ?>" href="historial_recargas.php">Historial ventas Recargas</a></li>
+              <li><a class="dropdown-item <?= item_active('historial_recargas.php', $current) ?>" href="historial_recargas.php">Historial Recargas</a></li>
             <?php endif; ?>
           </ul>
         </li>
@@ -753,13 +754,41 @@ function item_active(string $f, string $c): string
                   <hr class="dropdown-divider">
                 </li>
                 <li class="dropdown-header">Administrador</li>
-                <li><a class="dropdown-item <?= item_active('inventario_resumen.php', $current) ?>" href="inventario_resumen.php">Resumen Global</a></li>
-                <li><a class="dropdown-item <?= item_active('inventario_general.php', $current) ?>" href="inventario_general.php">Inventario Almacén</a></li>
-                <li><a class="dropdown-item <?= item_active('inventario_retiros.php', $current) ?>" href="inventario_retiros.php">🛑 Retiros de Inventario</a></li>
+
+                <li>
+                  <a class="dropdown-item <?= item_active('inventario_resumen.php', $current) ?>" href="inventario_resumen.php">
+                    Resumen Global
+                  </a>
+                </li>
+
+                <li>
+                  <a class="dropdown-item <?= item_active('inventario_general.php', $current) ?>" href="inventario_general.php">
+                    Inventario Almacén
+                  </a>
+                </li>
 
                 <?php if ($rolUsuario === 'Admin'): ?>
-                  <!-- 🔻 NUEVO: visible SOLO para ADMIN -->
-                  <li><a class="dropdown-item <?= item_active('retiro_sims.php', $current) ?>" href="retiro_sims.php">Retiro de SIMS</a></li>
+                  <!-- ✅ NUEVO: Inventario TC (solo ADMIN) -->
+                  <li>
+                    <a class="dropdown-item <?= item_active('payjoy_tc_inventario.php', $current) ?>" href="payjoy_tc_inventario.php">
+                      <i class="dropdown-item"></i>Inventario TC
+                    </a>
+                  </li>
+                <?php endif; ?>
+
+                <li>
+                  <a class="dropdown-item <?= item_active('inventario_retiros_v2.php', $current) ?>" href="inventario_retiros_v2.php">
+                    Retiros de Inventario
+                  </a>
+                </li>
+
+                <?php if ($rolUsuario === 'Admin'): ?>
+                  <!-- 🔻 Visible SOLO para ADMIN -->
+                  <li>
+                    <a class="dropdown-item <?= item_active('retiro_sims.php', $current) ?>" href="retiro_sims.php">
+                      Retiro de SIMS
+                    </a>
+                  </li>
                 <?php endif; ?>
               <?php endif; ?>
             <?php endif; ?>

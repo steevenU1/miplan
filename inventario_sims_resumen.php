@@ -1,5 +1,5 @@
 <?php
-// inventario_sims_resumen.php — Central 2.0 (FINAL con 6 operadores + badges rojo si 0)
+// inventario_sims_resumen.php — Central 2.0 (FINAL con edición ICCID/DN solo Admin)
 // - Filtro por caja robusto: detecta columna (caja_id | id_caja | caja), usa TRIM, soporta VARCHAR/INT.
 // - Export CSV toma los valores actuales del formulario (no exige "Aplicar") y respeta caja/sucursal/rol.
 // - Si el select de sucursal está disabled (vista "Por sucursal"), se envía por <input hidden> para no vaciar el export.
@@ -7,7 +7,8 @@
 // - Filtros: operador, tipo_plan, q (ICCID/DN), caja.
 // - UI: KPIs + cards por sucursal + tabla detalle por sucursal.
 // - Contadores por 'Bait','AT&T','Virgin','Unefon','Telcel','Movistar'.
-// - NUEVO: En cards por sucursal, si el conteo de un operador es 0, badge rojo claro.
+// - En cards por sucursal, si el conteo de un operador es 0, badge rojo claro.
+// - En detalle por sucursal se puede editar ICCID/DN de una SIM disponible mediante modal (solo Admin).
 
 session_start();
 if (!isset($_SESSION['id_usuario'])) { header("Location: index.php"); exit(); }
@@ -54,6 +55,75 @@ function orderCaja(string $expr): string {
   return "CAST(TRIM($expr) AS UNSIGNED), TRIM($expr)";
 }
 
+/* ============================================================
+   POST: Edición de SIM (ICCID / DN) — SOLO ADMIN
+   ============================================================ */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'editar_sim') {
+
+  $idSim       = (int)($_POST['id_sim'] ?? 0);
+  $nuevoIccid  = trim((string)($_POST['nuevo_iccid'] ?? ''));
+  $nuevoDn     = trim((string)($_POST['nuevo_dn'] ?? ''));
+  $returnQuery = ltrim((string)($_POST['return_query'] ?? ''), '?');
+
+  $ok = false;
+
+  // Candado: solo Admin puede editar
+  if (!isAdmin($ROL)) {
+    $redir = 'inventario_sims_resumen.php';
+    if ($returnQuery !== '') {
+      $redir .= '?'.$returnQuery;
+      if (strpos($returnQuery, 'upd=') === false) { $redir .= '&upd=0'; }
+    } else {
+      $redir .= '?upd=0';
+    }
+    header("Location: $redir");
+    exit;
+  }
+
+  if ($idSim > 0 && ($nuevoIccid !== '' || $nuevoDn !== '')) {
+
+    $sql = "UPDATE inventario_sims
+            SET iccid = ?, dn = ?
+            WHERE id = ? AND estatus = 'Disponible'
+            LIMIT 1";
+    $st = $conn->prepare($sql);
+    if ($st) {
+      $st->bind_param('ssi', $nuevoIccid, $nuevoDn, $idSim);
+      if ($st->execute() && $st->affected_rows >= 0) {
+        $ok = true;
+      }
+      $st->close();
+    }
+  }
+
+  // Redirección a la misma vista con flag de resultado
+  $redir = 'inventario_sims_resumen.php';
+  if ($returnQuery !== '') {
+    $redir .= '?'.$returnQuery;
+    if (strpos($returnQuery, 'upd=') === false) {
+      $redir .= '&upd=' . ($ok ? '1' : '0');
+    }
+  } else {
+    $redir .= '?upd=' . ($ok ? '1' : '0');
+  }
+
+  header("Location: $redir");
+  exit;
+}
+
+/* ===== Mensajes de actualización ===== */
+$alertMsg  = '';
+$alertType = 'success';
+if (isset($_GET['upd'])) {
+  if ($_GET['upd'] === '1') {
+    $alertMsg  = 'SIM actualizado correctamente.';
+    $alertType = 'success';
+  } elseif ($_GET['upd'] === '0') {
+    $alertMsg  = 'No se pudo actualizar el SIM. Verifica los datos.';
+    $alertType = 'danger';
+  }
+}
+
 /* ===== Parámetros / filtros ===== */
 $scope        = isAdmin($ROL) ? ($_GET['scope'] ?? 'global') : 'sucursal';
 $selSucursal  = isAdmin($ROL) ? (int)($_GET['sucursal'] ?? 0) : $ID_SUCURSAL; // 0 = todas
@@ -92,7 +162,7 @@ if (isAdmin($ROL)) {
   $sucursales = $rs->fetch_all(MYSQLI_ASSOC);
 }
 
-/* ===== Cajas (si hay sucursal concreta) — FIX DISTINCT+ORDER BY ===== */
+/* ===== Cajas (si hay sucursal concreta) ===== */
 $cajas = [];
 if ($haySucursalConcreta) {
   $sqlCajas = "
@@ -241,7 +311,6 @@ if (isset($_GET['export']) && $_GET['export']==='1') {
             ORDER BY s.nombre, i.operador, i.tipo_plan, i.iccid";
   }
 
-  // Limpia buffers y envía CSV
   if (ob_get_level()) { while (ob_get_level()) { ob_end_clean(); } }
   header('Content-Type: text/csv; charset=UTF-8');
   header('Content-Disposition: attachment; filename="inventario_sims_disponibles.csv"');
@@ -393,6 +462,14 @@ require_once __DIR__ . '/navbar.php';
     </div>
   </div>
 
+  <!-- Mensaje de actualización -->
+  <?php if ($alertMsg): ?>
+    <div class="alert alert-<?= h($alertType); ?> alert-dismissible fade show" role="alert">
+      <?= h($alertMsg); ?>
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+    </div>
+  <?php endif; ?>
+
   <!-- KPIs -->
   <div class="row g-3 mb-4">
     <div class="col-12 col-lg-4">
@@ -405,7 +482,7 @@ require_once __DIR__ . '/navbar.php';
       </div>
     </div>
 
-    <!-- Operadores: 6 tarjetas compactas (sin rojo/azul dinámico para no recargar) -->
+    <!-- Operadores -->
     <div class="col-6 col-lg-2">
       <div class="card kpi-card"><div class="card-body">
         <div class="kpi-sub text-secondary">Bait</div>
@@ -523,11 +600,12 @@ require_once __DIR__ . '/navbar.php';
                 <th>Plan</th>
                 <th>Caja</th>
                 <th>Ingreso</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
               <?php if (!$detalle): ?>
-                <tr><td colspan="7" class="text-center text-secondary">Sin registros</td></tr>
+                <tr><td colspan="8" class="text-center text-secondary">Sin registros</td></tr>
               <?php else:
                 $i=1; foreach($detalle as $r): ?>
                 <tr>
@@ -538,6 +616,22 @@ require_once __DIR__ . '/navbar.php';
                   <td><?= h($r['tipo_plan']); ?></td>
                   <td><?= h($r['caja_val']); ?></td>
                   <td class="text-nowrap"><?= h($r['fecha_ingreso']); ?></td>
+                  <td>
+                    <?php if (isAdmin($ROL)): ?>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-primary btn-edit-sim"
+                        data-id="<?= (int)$r['id']; ?>"
+                        data-iccid="<?= h($r['iccid']); ?>"
+                        data-dn="<?= h($r['dn']); ?>"
+                        data-bs-toggle="modal"
+                        data-bs-target="#modalEditarSim">
+                        Editar
+                      </button>
+                    <?php else: ?>
+                      <span class="text-muted small">N/A</span>
+                    <?php endif; ?>
+                  </td>
                 </tr>
               <?php endforeach; endif; ?>
             </tbody>
@@ -549,8 +643,77 @@ require_once __DIR__ . '/navbar.php';
         </div>
       </div>
     </div>
+
+    <!-- Modal: Editar SIM (solo Admin, pero el candado está en el POST) -->
+    <div class="modal fade" id="modalEditarSim" tabindex="-1" aria-labelledby="modalEditarSimLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <form method="post" class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="modalEditarSimLabel">
+              Editar SIM <span class="text-muted small">ID <span class="sim-id-label"></span></span>
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" name="action" value="editar_sim">
+            <input type="hidden" name="id_sim" value="">
+            <input type="hidden" name="return_query" value="">
+
+            <div class="mb-3">
+              <label class="form-label">ICCID</label>
+              <input type="text" name="nuevo_iccid" class="form-control" autocomplete="off">
+              <div class="form-text">Corrige el ICCID si hay un error de captura.</div>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label">DN</label>
+              <input type="text" name="nuevo_dn" class="form-control" autocomplete="off">
+              <div class="form-text">Actualiza el DN si fue reasignado.</div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Guardar cambios</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
   <?php endif; ?>
 
 </div>
+
+<!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script> -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var modal = document.getElementById('modalEditarSim');
+  if (!modal) return;
+
+  modal.addEventListener('show.bs.modal', function (event) {
+    var button = event.relatedTarget;
+    if (!button) return;
+
+    var id    = button.getAttribute('data-id')    || '';
+    var iccid = button.getAttribute('data-iccid') || '';
+    var dn    = button.getAttribute('data-dn')    || '';
+
+    var idInput     = modal.querySelector('input[name="id_sim"]');
+    var iccidInput  = modal.querySelector('input[name="nuevo_iccid"]');
+    var dnInput     = modal.querySelector('input[name="nuevo_dn"]');
+    var idLabel     = modal.querySelector('.sim-id-label');
+
+    if (idInput) idInput.value = id;
+    if (iccidInput) iccidInput.value = iccid;
+    if (dnInput) dnInput.value = dn;
+    if (idLabel) idLabel.textContent = id;
+  });
+
+  // Guardamos la query actual para volver al mismo estado después del POST
+  var returnInput = document.querySelector('#modalEditarSim input[name="return_query"]');
+  if (returnInput) {
+    returnInput.value = window.location.search.replace(/^\?/, '');
+  }
+});
+</script>
 </body>
 </html>
