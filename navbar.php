@@ -212,7 +212,10 @@ $grpVentas     = [
   'historial_ventas_sims.php',
   'historial_payjoy_tc.php',
   'historial_ventas_accesorios.php',
-  'historial_recargas.php'
+  'historial_recargas.php',
+  // Scooters
+  'nueva_venta_scooter.php',
+  'historial_ventas_scooters.php'
 ];
 $grpInventario = [
   'panel.php',
@@ -229,12 +232,22 @@ $grpInventario = [
 ];
 
 $grpCompras    = ['compras_nueva.php', 'compras_resumen.php', 'modelos.php', 'proveedores.php', 'compras_ingreso.php'];
-$grpTraspasos  = ['generar_traspaso.php', 'generar_traspaso_sims.php', 'traspasos_sims_pendientes.php', 'traspasos_sims_salientes.php', 'traspasos_pendientes.php', 'traspasos_salientes.php', 'traspaso_nuevo.php'];
+$grpTraspasos  = [
+  'generar_traspaso.php',
+  'generar_traspaso_sims.php',
+  'traspasos_sims_pendientes.php',
+  'traspasos_sims_salientes.php',
+  'traspasos_pendientes.php',
+  'traspasos_salientes.php',
+  'traspaso_nuevo.php',
+  'historial_traspasos.php'
+];
+
 $grpEfectivo   = ['cobros.php', 'cortes_caja.php', 'generar_corte.php', 'depositos_sucursal.php', 'depositos.php', 'recoleccion_comisiones.php'];
 $grpOperacion  = ['lista_precios.php', 'prospectos.php', 'insumos_pedido.php', 'insumos_admin.php', 'mantenimiento_solicitar.php', 'mantenimiento_admin.php', 'gestionar_usuarios.php', 'zona_asistencias.php', 'nomina_mi_semana.php', 'panel_operador.php'];
 $grpRH         = ['reporte_nomina.php', 'reporte_nomina_gerentes_zona.php', 'admin_expedientes.php', 'admin_asistencias.php', 'productividad_ejecutivo.php'];
 $grpOperativos = [
-  'tickets_nuevo.php',   // ← NUEVO (dejarlo arriba)
+  'tickets_nuevo.php',
   'insumos_catalogo.php',
   'actualizar_precios_modelo.php',
   'cuotas_mensuales.php',
@@ -336,7 +349,6 @@ function item_active(string $f, string $c): string
     background: rgba(255, 255, 255, .06);
   }
 
-  /* Quitar carets */
   .navbar-luga .dropdown-toggle::after {
     display: none !important;
   }
@@ -358,7 +370,6 @@ function item_active(string $f, string $c): string
     font-size: var(--drop-font);
   }
 
-  /* Dropdown largo: que no se salga de la pantalla */
   .navbar-luga .dropdown-menu {
     --bs-dropdown-bg: #0f141a;
     --bs-dropdown-color: #e7eef7;
@@ -373,19 +384,13 @@ function item_active(string $f, string $c): string
     border-radius: 14px;
     box-shadow: 0 16px 40px rgba(0, 0, 0, .35);
     overflow: auto;
-    /* ⬅️ habilita scroll */
     max-height: calc(100vh - 110px);
-    /* ⬅️ no más alto que la ventana */
     overscroll-behavior: contain;
-    /* evita “brincos” al hacer scroll */
     -webkit-overflow-scrolling: touch;
-    /* scroll suave en iOS */
     font-size: var(--drop-font);
     padding-bottom: .25rem;
-    /* respirito al final */
   }
 
-  /* Opcional: headers pegajosos dentro del dropdown para ubicarnos */
   .navbar-luga .dropdown-menu .dropdown-header {
     position: sticky;
     top: 0;
@@ -394,7 +399,6 @@ function item_active(string $f, string $c): string
     padding-top: .5rem;
   }
 
-  /* Scrollbar sutil (opcional) */
   .navbar-luga .dropdown-menu::-webkit-scrollbar {
     width: 8px;
   }
@@ -408,37 +412,26 @@ function item_active(string $f, string $c): string
     background: transparent;
   }
 
-  /* === MODO MÓVIL / < xl  ============================================= */
-  /* La navbar es expand-xl; por debajo de xl (1199.98px) está colapsada */
   @media (max-width: 1199.98px) {
-
-    /* El panel colapsado debe poder hacer scroll para mostrar todo el menú */
     #navbarMain {
       max-height: calc(100svh - 64px);
-      /* 64px aprox. altura de la barra */
       overflow-y: auto;
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
       padding-bottom: .5rem;
-      /* respiro al fondo */
     }
 
-    /* El dropdown dentro del panel debe fluir "en bloque", no flotante */
     .navbar-luga .dropdown-menu {
       position: static !important;
-      /* que no se “despegue” */
       transform: none !important;
       max-height: none;
-      /* el scroll lo maneja #navbarMain */
       overflow: visible;
       box-shadow: none;
-      /* más natural en panel lateral */
       border-radius: 12px;
       border: 1px solid rgba(255, 255, 255, .12);
       margin-top: .25rem;
     }
 
-    /* Headers del dropdown no necesitan sticky en móvil */
     .navbar-luga .dropdown-menu .dropdown-header {
       position: static;
     }
@@ -627,7 +620,6 @@ function item_active(string $f, string $c): string
   }
 </style>
 
-<!-- Mantener expandido en ≥1200px para evitar hamburguesa en pantallas medianas de PC -->
 <nav id="topbar" class="navbar navbar-expand-xl navbar-dark navbar-luga sticky-top">
   <div class="container-fluid">
 
@@ -673,11 +665,13 @@ function item_active(string $f, string $c): string
               <li><a class="dropdown-item <?= item_active('historial_ventas.php', $current) ?>" href="historial_ventas.php">Historial de ventas</a></li>
               <li><a class="dropdown-item <?= item_active('historial_ventas_sims.php', $current) ?>" href="historial_ventas_sims.php">Historial ventas SIM</a></li>
               <li><a class="dropdown-item <?= item_active('historial_payjoy_tc.php', $current) ?>" href="historial_payjoy_tc.php">Historial PayJoy TC</a></li>
+              <li><a class="dropdown-item <?= item_active('historial_ventas_scooters.php', $current) ?>" href="historial_ventas_scooters.php">Historial ventas scooters</a></li>
 
             <?php else: ?>
               <!-- Ventas nuevas -->
               <li class="dropdown-header">Ventas nuevas</li>
               <li><a class="dropdown-item <?= item_active('nueva_venta.php', $current) ?>" href="nueva_venta.php">Venta equipos</a></li>
+              <li><a class="dropdown-item <?= item_active('nueva_venta_scooter.php', $current) ?>" href="nueva_venta_scooter.php">Venta scooters</a></li>
               <li><a class="dropdown-item <?= item_active('venta_sim_prepago.php', $current) ?>" href="venta_sim_prepago.php">Venta SIM prepago</a></li>
               <li><a class="dropdown-item <?= item_active('venta_sim_pospago.php', $current) ?>" href="venta_sim_pospago.php">Venta SIM pospago</a></li>
               <li><a class="dropdown-item <?= item_active('payjoy_tc_nueva.php', $current) ?>" href="payjoy_tc_nueva.php">PayJoy TC – Nueva</a></li>
@@ -691,6 +685,7 @@ function item_active(string $f, string $c): string
               <!-- Historiales -->
               <li class="dropdown-header">Historiales</li>
               <li><a class="dropdown-item <?= item_active('historial_ventas.php', $current) ?>" href="historial_ventas.php">Historial de ventas</a></li>
+              <li><a class="dropdown-item <?= item_active('historial_ventas_scooters.php', $current) ?>" href="historial_ventas_scooters.php">Historial ventas scooters</a></li>
               <li><a class="dropdown-item <?= item_active('historial_ventas_sims.php', $current) ?>" href="historial_ventas_sims.php">Historial ventas SIM</a></li>
               <li><a class="dropdown-item <?= item_active('historial_payjoy_tc.php', $current) ?>" href="historial_payjoy_tc.php">Historial PayJoy TC</a></li>
               <li><a class="dropdown-item <?= item_active('historial_ventas_accesorios.php', $current) ?>" href="historial_ventas_accesorios.php">Historial ventas accesorios</a></li>
@@ -709,7 +704,6 @@ function item_active(string $f, string $c): string
               <li><a class="dropdown-item <?= item_active('inventario_global.php', $current) ?>" href="inventario_global.php">Inventario global</a></li>
               <li><a class="dropdown-item <?= item_active('inventario_historico.php', $current) ?>" href="inventario_historico.php">Inventario histórico</a></li>
 
-              <!-- 🔻 NUEVO: visible para LOGISTICA -->
               <li>
                 <hr class="dropdown-divider">
               </li>
@@ -725,7 +719,6 @@ function item_active(string $f, string $c): string
                 <li><a class="dropdown-item <?= item_active('inventario_global.php', $current) ?>" href="inventario_global.php">Inventario global</a></li>
               <?php endif; ?>
 
-              <!-- ✅ SIMs (Resumen) SOLO para Gerente y Admin -->
               <?php if (in_array($rolUsuario, ['Gerente', 'Admin'], true)): ?>
                 <li><a class="dropdown-item <?= item_active('inventario_sims_resumen.php', $current) ?>" href="inventario_sims_resumen.php">Inventario SIMs</a></li>
               <?php endif; ?>
@@ -768,7 +761,6 @@ function item_active(string $f, string $c): string
                 </li>
 
                 <?php if ($rolUsuario === 'Admin'): ?>
-                  <!-- ✅ NUEVO: Inventario TC (solo ADMIN) -->
                   <li>
                     <a class="dropdown-item <?= item_active('payjoy_tc_inventario.php', $current) ?>" href="payjoy_tc_inventario.php">
                       <i class="dropdown-item"></i>Inventario TC
@@ -783,7 +775,6 @@ function item_active(string $f, string $c): string
                 </li>
 
                 <?php if ($rolUsuario === 'Admin'): ?>
-                  <!-- 🔻 Visible SOLO para ADMIN -->
                   <li>
                     <a class="dropdown-item <?= item_active('retiro_sims.php', $current) ?>" href="retiro_sims.php">
                       Retiro de SIMS
@@ -861,6 +852,19 @@ function item_active(string $f, string $c): string
                 </a>
               </li>
               <li><a class="dropdown-item <?= item_active('traspasos_salientes.php', $current) ?>" href="traspasos_salientes.php">Traspasos salientes</a></li>
+
+              <?php if ($rolUsuario === 'Admin'): ?>
+                <li>
+                  <hr class="dropdown-divider">
+                </li>
+                <li class="dropdown-header">Historial global</li>
+                <li>
+                  <a class="dropdown-item <?= item_active('historial_traspasos.php', $current) ?>" href="historial_traspasos.php">
+                    <i class=" "></i>Historial (Equipos + SIMs)
+                  </a>
+                </li>
+              <?php endif; ?>
+
             </ul>
           </li>
         <?php endif; ?>
@@ -899,7 +903,6 @@ function item_active(string $f, string $c): string
           <ul class="dropdown-menu">
             <li><a class="dropdown-item <?= item_active('lista_precios.php', $current) ?>" href="lista_precios.php">Lista de precios</a></li>
 
-            <!-- Panel Operador: visible solo para Admin y Logística -->
             <?php if (in_array($rolUsuario, ['Admin', 'Logistica'], true)): ?>
               <li><a class="dropdown-item <?= item_active('panel_operador.php', $current) ?>" href="panel_operador.php">
                   Panel Operador
@@ -953,7 +956,6 @@ function item_active(string $f, string $c): string
               <i class="bi bi-tools"></i>Operativos
             </a>
             <ul class="dropdown-menu">
-              <!-- 🔝 Tickets Central (solo Admin) -->
               <li>
                 <a class="dropdown-item <?= item_active('tickets_nuevo.php', $current) ?>" href="tickets_nuevo.php">
                   <i class="bi bi-ticket-detailed me-1"></i>Tickets Central
@@ -993,14 +995,6 @@ function item_active(string $f, string $c): string
               <li class="dropdown-header">Altas</li>
               <li><a class="dropdown-item <?= item_active('alta_usuario.php', $current) ?>" href="alta_usuario.php">Alta de usuario</a></li>
               <li><a class="dropdown-item <?= item_active('alta_sucursal.php', $current) ?>" href="alta_sucursal.php">Alta de sucursal</a></li>
-
-              <!--
-      <li>
-        <a class="dropdown-item <?= item_active('incidencias_matriz.php', $current) ?>" href="incidencias_matriz.php">
-          <i class="bi bi-bug me-1"></i>Matriz de incidencias
-        </a>
-      </li>
-      -->
             </ul>
           </li>
         <?php endif; ?>
@@ -1045,7 +1039,6 @@ function item_active(string $f, string $c): string
         <?php endif; ?>
       </ul>
 
-      <!-- Derecha -->
       <ul class="navbar-nav ms-auto align-items-center">
         <?php if (in_array($rolUsuario, ['Ejecutivo', 'Gerente'])): ?>
           <li class="nav-item my-1 my-xl-0 me-xl-2">
@@ -1055,7 +1048,6 @@ function item_active(string $f, string $c): string
           </li>
         <?php endif; ?>
 
-        <!-- Perfil / Cambio sucursal -->
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" data-bs-toggle="dropdown">
             <span class="me-2 position-relative">
@@ -1091,8 +1083,10 @@ function item_active(string $f, string $c): string
               </li>
               <li class="px-3 pb-2 text-secondary small"><i class="bi bi-arrow-repeat me-1"></i>Cambiar de sucursal</li>
               <?php if (count($misSucursales) === 2): ?>
-                <?php $actual = (int)$idSucursal;
-                $otra = ($misSucursales[0]['id'] == $actual) ? $misSucursales[1] : $misSucursales[0]; ?>
+                <?php
+                $actual = (int)$idSucursal;
+                $otra = ($misSucursales[0]['id'] == $actual) ? $misSucursales[1] : $misSucursales[0];
+                ?>
                 <li class="px-3 pb-2">
                   <form action="cambiar_sucursal.php" method="post" class="d-flex gap-2">
                     <input type="hidden" name="csrf" value="<?= e($_SESSION['csrf']) ?>">
@@ -1131,7 +1125,7 @@ function item_active(string $f, string $c): string
   </div>
 </nav>
 
-<?php if (!empty($avatarUrl) ? false : true): /* nudge solo si no hay foto */ ?>
+<?php if (!empty($avatarUrl) ? false : true): ?>
   <div id="toast-foto" class="toast align-items-center text-bg-light border-0 shadow"
     role="alert" aria-live="assertive" aria-atomic="true"
     style="position:fixed; right:1rem; bottom:1rem; z-index:1080; min-width:320px;">

@@ -20,46 +20,95 @@ $idSucursal = (int)($_SESSION['id_sucursal'] ?? 0);
 // === Definición de herramientas del panel ===
 // Puedes agregar más entradas a este arreglo y listo.
 $TOOLS = [
+    [
+    'key'        => 'kardex',
+    'title'      => 'Kardex',
+    'desc'       => 'Ver kardex de productos.',
+    'href'       => 'kardex.php',
+    'icon'       => 'bi-card-list', // � Lista de tarjetas = kardex
+    'roles'      => ['Admin', 'Logistica'],
+  ],        
   [
     'key'        => 'editar_cobros',
     'title'      => 'Editar Cobros',
     'desc'       => 'Corrige cobros siempre que no estén ligados a un corte.',
     'href'       => 'cobros_admin_editar.php',
-    'icon'       => 'bi-receipt-cutoff',
-    'roles'      => ['Admin'], // quiénes pueden entrar
+    'icon'       => 'bi-cash-coin', // 💰 Cobros = dinero directo
+    'roles'      => ['Admin'],
   ],
   [
     'key'        => 'editar_cortes',
     'title'      => 'Editar Cortes de Caja',
     'desc'       => 'Ajusta totales, fechas y elimina cortes liberando sus cobros.',
     'href'       => 'cortes_admin_editar.php',
-    'icon'       => 'bi-scissors',
-    'roles'      => ['Admin'], // quiénes pueden entrar
+    'icon'       => 'bi-cash-stack', // 💵 Pila de dinero, representa caja o corte
+    'roles'      => ['Admin'],
   ],
   [
     'key'        => 'horarios_carga_rapida',
     'title'      => 'Horarios Sucursal',
     'desc'       => 'Corrige horarios de sucursales.',
     'href'       => 'horarios_carga_rapida.php',
-    'icon'       => 'bi-receipt-cutoff',
-    'roles'      => ['Admin'], // quiénes pueden entrar
+    'icon'       => 'bi-calendar-week', // 📅 Representa horario/semanal
+    'roles'      => ['Admin'],
   ],
   [
     'key'        => 'nuevo_producto',
     'title'      => 'Nuevo Producto',
     'desc'       => 'Ingresa producto a inventario sin ingresar por compras.',
     'href'       => 'nuevo_producto.php',
-    'icon'       => 'bi-scissors',
-    'roles'      => ['Admin'], // quiénes pueden entrar
+    'icon'       => 'bi-box-seam', // 📦 Producto físico
+    'roles'      => ['Admin','Logistica'],
   ],
   [
     'key'        => 'asistencias_editar',
     'title'      => 'Editar Asistencias',
     'desc'       => 'Editar asistencias.',
     'href'       => 'asistencias_admin_editar.php',
-    'icon'       => 'bi-scissors',
-    'roles'      => ['Admin'], // quiénes pueden entrar
+    'icon'       => 'bi-person-check', // ✅ Persona = asistencia/checar entrada
+    'roles'      => ['Admin'],
   ],
+  [
+    'key'        => 'actualizar_precios',
+    'title'      => 'Actualizar Precios',
+    'desc'       => 'Actualizar precios de lista por código.',
+    'href'       => 'actualizar_precios_modelo.php',
+    'icon'       => 'bi-tags', // 🏷️ Etiquetas = precios
+    'roles'      => ['Logistica', 'Admin'],
+  ],
+  [
+    'key'        => 'inventario_retiros',
+    'title'      => 'Retirar inventario',
+    'desc'       => 'Retira inventario colocando status "retirado".',
+    'href'       => 'inventario_retiros.php',
+    'icon'       => 'bi-box-arrow-up', // 📤 Caja saliendo = retiro
+    'roles'      => ['Logistica'],
+  ],
+  [
+    'key'        => 'crear_codigo',
+    'title'      => 'Crear Código Logística',
+    'desc'       => 'Creación de códigos de productos.',
+    'href'       => 'catalogo_modelos_admin.php',
+    'icon'       => 'bi-upc-scan', // 📤 Caja saliendo = retiro
+    'roles'      => ['Logistica'],
+  ],
+  [
+    'key'        => 'corregir_codigo',
+    'title'      => 'Corregir código',
+    'desc'       => 'Corrección de códigos de productos por imei.',
+    'href'       => 'productos_corregir_codigo.php',
+    'icon'       => 'bi-upc-scan', // 📤 Caja saliendo = retiro
+    'roles'      => ['Logistica', 'Admin'],
+  ],
+  [
+    'key'        => 'administracion_sucursales',
+    'title'      => 'Administración de Sucursales',
+    'desc'       => 'Administrar sucursales, zonas y cuotas.',
+    'href'       => 'sucursales_admin.php',
+    'icon'       => 'bi-building', // � Edificio = sucursal
+    'roles'      => ['Admin','Gerente General'],
+  ],
+
 
   // ==== Ejemplos para futuro (déjalos como referencia) ====
   // [

@@ -34,6 +34,13 @@ $inicioPrev = $inicioPrevObj->format('Y-m-d');
 $finPrev    = $finPrevObj->format('Y-m-d');
 
 /* ==============================
+   Tipo de dashboard (switch)
+   equipos | sims | scooters
+================================= */
+$tipoDash = isset($_GET['tipo']) ? strtolower(trim((string)$_GET['tipo'])) : 'equipos';
+if (!in_array($tipoDash, ['equipos', 'sims', 'scooters'], true)) $tipoDash = 'equipos';
+
+/* ==============================
    Helpers
 ================================= */
 function arrowIcon($delta)
@@ -82,13 +89,17 @@ try {
     $rs2 = $conn->query("SHOW COLUMNS FROM productos LIKE 'tipo_producto'");
     if ($rs2 && $rs2->num_rows > 0) $colTipoProd = 'tipo_producto';
   }
-} catch (Exception $e) { /* fallback a tipo_producto */
-}
+} catch (Exception $e) { /* fallback */ }
 
 /* ==========================================================
-   Agregado por venta (unidades por VENTA, no por detalle)
+   SUBQUERIES (AGG) SEGÚN TIPO
+   - equipos: tu lógica original (ventas + detalle_venta + productos)
+   - sims:   ventas_sims
+   - scooters: ventas_scooter (con detalle opcional)
 ========================================================== */
-$subVentasAgg = "
+
+/* ---------- EQUIPOS (ORIGINAL) ---------- */
+$subVentasAggEquipos = "
   SELECT
     v.id,
     v.id_usuario,
@@ -117,73 +128,116 @@ $subVentasAgg = "
   GROUP BY v.id
 ";
 
+/* ---------- SIMS (ventas_sims) ---------- */
+$subVentasAggSims = "
+  SELECT
+    vs.id,
+    vs.id_usuario,
+    vs.id_sucursal,
+    DATE(CONVERT_TZ(vs.fecha_venta,'+00:00','-06:00')) AS dia,
+    /* 1 SIM = 1 unidad */
+    1 AS unidades,
+    /* monto = precio_total (si existe) */
+    COALESCE(vs.precio_total,0) AS monto
+  FROM ventas_sims vs
+  WHERE DATE(CONVERT_TZ(vs.fecha_venta,'+00:00','-06:00')) BETWEEN ? AND ?
+  GROUP BY vs.id
+";
+
+/* ---------- SCOOTERS (ventas_scooter) ---------- */
+$subVentasAggScooters = "
+  SELECT
+    vs.id,
+    vs.id_usuario,
+    vs.id_sucursal,
+    DATE(CONVERT_TZ(vs.fecha_venta,'+00:00','-06:00')) AS dia,
+    /* 1 venta scooter = 1 unidad */
+    1 AS unidades,
+    COALESCE(vs.precio_venta,0) AS monto
+  FROM ventas_scooter vs
+  WHERE DATE(CONVERT_TZ(vs.fecha_venta,'+00:00','-06:00')) BETWEEN ? AND ?
+  GROUP BY vs.id
+";
+
+/* Elegir subquery activa */
+if ($tipoDash === 'sims') {
+  $subVentasAgg = $subVentasAggSims;
+} elseif ($tipoDash === 'scooters') {
+  $subVentasAgg = $subVentasAggScooters;
+} else {
+  $subVentasAgg = $subVentasAggEquipos;
+}
+
 /* ==========================================================
-   SIMs (tabla separada ventas_sims)
+   SIMs (tabla separada ventas_sims) - SOLO para modo EQUIPOS
+   (para mostrar SIM Prep/Pos por ejecutivo y sucursal en el dashboard de equipos)
 ========================================================== */
 $mapSimsByUser = [];
 $mapSimsBySuc  = [];
 
-// Por usuario
-$sqlSimsUser = "
-  SELECT id_usuario,
-         SUM(CASE
-               WHEN (LOWER(tipo_venta) REGEXP 'pospago|postpago|\\bpos\\b'
-                  OR LOWER(tipo_sim)   REGEXP 'pospago|postpago|\\bpos\\b'
-                  OR LOWER(IFNULL(comentarios,'')) REGEXP 'pospago|postpago|\\bpos\\b')
-               THEN 1 ELSE 0 END) AS sim_pos,
-         SUM(CASE
-               WHEN (LOWER(tipo_venta) REGEXP 'pospago|postpago|\\bpos\\b'
-                  OR LOWER(tipo_sim)   REGEXP 'pospago|postpago|\\bpos\\b'
-                  OR LOWER(IFNULL(comentarios,'')) REGEXP 'pospago|postpago|\\bpos\\b')
-               THEN 0
-               WHEN (LOWER(tipo_venta) LIKE '%regalo%'
-                  OR LOWER(tipo_sim)   LIKE '%regalo%'
-                  OR LOWER(IFNULL(comentarios,'')) LIKE '%regalo%')
-               THEN 0
-               ELSE 1 END) AS sim_pre
-  FROM ventas_sims
-  WHERE DATE(CONVERT_TZ(fecha_venta,'+00:00','-06:00')) BETWEEN ? AND ?
-  GROUP BY id_usuario
-";
-$stSU = $conn->prepare($sqlSimsUser);
-$stSU->bind_param("ss", $inicioSemana, $finSemana);
-$stSU->execute();
-$resSU = $stSU->get_result();
-while ($r = $resSU->fetch_assoc()) {
-  $mapSimsByUser[(int)$r['id_usuario']] = ['pre' => (int)$r['sim_pre'], 'pos' => (int)$r['sim_pos']];
-}
-$stSU->close();
+if ($tipoDash === 'equipos') {
+  // Por usuario
+  $sqlSimsUser = "
+    SELECT id_usuario,
+           SUM(CASE
+                 WHEN (LOWER(tipo_venta) REGEXP 'pospago|postpago|\\bpos\\b'
+                    OR LOWER(tipo_sim)   REGEXP 'pospago|postpago|\\bpos\\b'
+                    OR LOWER(IFNULL(comentarios,'')) REGEXP 'pospago|postpago|\\bpos\\b')
+                 THEN 1 ELSE 0 END) AS sim_pos,
+           SUM(CASE
+                 WHEN (LOWER(tipo_venta) REGEXP 'pospago|postpago|\\bpos\\b'
+                    OR LOWER(tipo_sim)   REGEXP 'pospago|postpago|\\bpos\\b'
+                    OR LOWER(IFNULL(comentarios,'')) REGEXP 'pospago|postpago|\\bpos\\b')
+                 THEN 0
+                 WHEN (LOWER(tipo_venta) LIKE '%regalo%'
+                    OR LOWER(tipo_sim)   LIKE '%regalo%'
+                    OR LOWER(IFNULL(comentarios,'')) LIKE '%regalo%')
+                 THEN 0
+                 ELSE 1 END) AS sim_pre
+    FROM ventas_sims
+    WHERE DATE(CONVERT_TZ(fecha_venta,'+00:00','-06:00')) BETWEEN ? AND ?
+    GROUP BY id_usuario
+  ";
+  $stSU = $conn->prepare($sqlSimsUser);
+  $stSU->bind_param("ss", $inicioSemana, $finSemana);
+  $stSU->execute();
+  $resSU = $stSU->get_result();
+  while ($r = $resSU->fetch_assoc()) {
+    $mapSimsByUser[(int)$r['id_usuario']] = ['pre' => (int)$r['sim_pre'], 'pos' => (int)$r['sim_pos']];
+  }
+  $stSU->close();
 
-// Por sucursal
-$sqlSimsSuc = "
-  SELECT id_sucursal,
-         SUM(CASE
-               WHEN (LOWER(tipo_venta) REGEXP 'pospago|postpago|\\bpos\\b'
-                  OR LOWER(tipo_sim)   REGEXP 'pospago|postpago|\\bpos\\b'
-                  OR LOWER(IFNULL(comentarios,'')) REGEXP 'pospago|postpago|\\bpos\\b')
-               THEN 1 ELSE 0 END) AS sim_pos,
-         SUM(CASE
-               WHEN (LOWER(tipo_venta) REGEXP 'pospago|postpago|\\bpos\\b'
-                  OR LOWER(tipo_sim)   REGEXP 'pospago|postpago|\\bpos\\b'
-                  OR LOWER(IFNULL(comentarios,'')) REGEXP 'pospago|postpago|\\bpos\\b')
-               THEN 0
-               WHEN (LOWER(tipo_venta) LIKE '%regalo%'
-                  OR LOWER(tipo_sim)   LIKE '%regalo%'
-                  OR LOWER(IFNULL(comentarios,'')) LIKE '%regalo%')
-               THEN 0
-               ELSE 1 END) AS sim_pre
-  FROM ventas_sims
-  WHERE DATE(CONVERT_TZ(fecha_venta,'+00:00','-06:00')) BETWEEN ? AND ?
-  GROUP BY id_sucursal
-";
-$stSS = $conn->prepare($sqlSimsSuc);
-$stSS->bind_param("ss", $inicioSemana, $finSemana);
-$stSS->execute();
-$resSS = $stSS->get_result();
-while ($r = $resSS->fetch_assoc()) {
-  $mapSimsBySuc[(int)$r['id_sucursal']] = ['pre' => (int)$r['sim_pre'], 'pos' => (int)$r['sim_pos']];
+  // Por sucursal
+  $sqlSimsSuc = "
+    SELECT id_sucursal,
+           SUM(CASE
+                 WHEN (LOWER(tipo_venta) REGEXP 'pospago|postpago|\\bpos\\b'
+                    OR LOWER(tipo_sim)   REGEXP 'pospago|postpago|\\bpos\\b'
+                    OR LOWER(IFNULL(comentarios,'')) REGEXP 'pospago|postpago|\\bpos\\b')
+                 THEN 1 ELSE 0 END) AS sim_pos,
+           SUM(CASE
+                 WHEN (LOWER(tipo_venta) REGEXP 'pospago|postpago|\\bpos\\b'
+                    OR LOWER(tipo_sim)   REGEXP 'pospago|postpago|\\bpos\\b'
+                    OR LOWER(IFNULL(comentarios,'')) REGEXP 'pospago|postpago|\\bpos\\b')
+                 THEN 0
+                 WHEN (LOWER(tipo_venta) LIKE '%regalo%'
+                    OR LOWER(tipo_sim)   LIKE '%regalo%'
+                    OR LOWER(IFNULL(comentarios,'')) LIKE '%regalo%')
+                 THEN 0
+                 ELSE 1 END) AS sim_pre
+    FROM ventas_sims
+    WHERE DATE(CONVERT_TZ(fecha_venta,'+00:00','-06:00')) BETWEEN ? AND ?
+    GROUP BY id_sucursal
+  ";
+  $stSS = $conn->prepare($sqlSimsSuc);
+  $stSS->bind_param("ss", $inicioSemana, $finSemana);
+  $stSS->execute();
+  $resSS = $stSS->get_result();
+  while ($r = $resSS->fetch_assoc()) {
+    $mapSimsBySuc[(int)$r['id_sucursal']] = ['pre' => (int)$r['sim_pre'], 'pos' => (int)$r['sim_pos']];
+  }
+  $stSS->close();
 }
-$stSS->close();
 
 /* ==============================
    Ejecutivos
@@ -223,11 +277,16 @@ while ($row = $resEjecutivos->fetch_assoc()) {
   $row['cuota_ejecutivo'] = (int)($row['cuota_ejecutivo'] ?? 0);
   $row['cumplimiento']    = $row['cuota_ejecutivo'] > 0 ? ($row['unidades'] / $row['cuota_ejecutivo'] * 100) : 0;
 
-  $simU = $mapSimsByUser[(int)$row['id']] ?? ['pre' => 0, 'pos' => 0];
-  $row['sim_prepago']     = (int)$simU['pre'];
-  $row['sim_pospago']     = (int)$simU['pos'];
+  if ($tipoDash === 'equipos') {
+    $simU = $mapSimsByUser[(int)$row['id']] ?? ['pre' => 0, 'pos' => 0];
+    $row['sim_prepago'] = (int)$simU['pre'];
+    $row['sim_pospago'] = (int)$simU['pos'];
+  } else {
+    $row['sim_prepago'] = 0;
+    $row['sim_pospago'] = 0;
+  }
 
-  $rankingEjecutivos[]    = $row;
+  $rankingEjecutivos[] = $row;
 }
 $top3Ejecutivos = array_slice(array_column($rankingEjecutivos, 'id'), 0, 3);
 
@@ -269,7 +328,7 @@ foreach ($rankingEjecutivos as &$r) {
 unset($r);
 
 /* ==============================
-   Sucursales (con SIMs)
+   Sucursales (con SIMs SOLO en equipos)
 ================================= */
 $sqlSucursales = "
   SELECT
@@ -306,17 +365,22 @@ while ($row = $resSucursales->fetch_assoc()) {
   $row['cuota_semanal'] = (float)($row['cuota_semanal'] ?? 0);
   $row['cumplimiento']  = $row['cuota_semanal'] > 0 ? ($row['total_ventas'] / $row['cuota_semanal'] * 100) : 0;
 
-  $simS = $mapSimsBySuc[(int)$row['id_sucursal']] ?? ['pre' => 0, 'pos' => 0];
-  $row['sim_prepago']   = (int)$simS['pre'];
-  $row['sim_pospago']   = (int)$simS['pos'];
+  if ($tipoDash === 'equipos') {
+    $simS = $mapSimsBySuc[(int)$row['id_sucursal']] ?? ['pre' => 0, 'pos' => 0];
+    $row['sim_prepago'] = (int)$simS['pre'];
+    $row['sim_pospago'] = (int)$simS['pos'];
+  } else {
+    $row['sim_prepago'] = 0;
+    $row['sim_pospago'] = 0;
+  }
 
   $sucursales[] = $row;
 
   $totalUnidades     += $row['unidades'];
   $totalVentasGlobal += $row['total_ventas'];
   $totalCuotaGlobal  += $row['cuota_semanal'];
-  $totalSimPre       += $row['sim_prepago'];
-  $totalSimPos       += $row['sim_pospago'];
+  $totalSimPre       += (int)$row['sim_prepago'];
+  $totalSimPos       += (int)$row['sim_pospago'];
 }
 $porcentajeGlobal = $totalCuotaGlobal > 0 ? ($totalVentasGlobal / $totalCuotaGlobal) * 100 : 0;
 
@@ -442,6 +506,12 @@ if ($hoyStr < $inicioSemana) {
   $diasTrans = (new DateTime($inicioSemana))->diff(new DateTime($hoyStr))->days + 1;
   $pctObjetivoSem = min(100, ($diasTrans / 7) * 100);
 }
+
+/* ==============================
+   Títulos dinámicos
+================================= */
+$tituloDash = ($tipoDash === 'sims') ? 'Dashboard Semanal SIMs'
+            : (($tipoDash === 'scooters') ? 'Dashboard Semanal Scooters' : 'Dashboard Semanal Equipos');
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -449,16 +519,11 @@ if ($hoyStr < $inicioSemana) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dashboard Semanal Luga</title>
+  <title><?= h($tituloDash) ?></title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
   <style>
-    .clip {
-      max-width: 160px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap
-    }
+    .clip { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
     .clip-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
     .clip-branch { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
     .num { font-variant-numeric: tabular-nums; letter-spacing: -.2px }
@@ -495,6 +560,11 @@ if ($hoyStr < $inicioSemana) {
     .progress-target { position: absolute; left: var(--target, 0%); transform: translateX(-50%); top: -2px; height: 18px; width: 0; pointer-events: none }
     .progress-target .tick { position: absolute; bottom: 0; left: -1px; width: 2px; height: 16px; background: #16a34a; opacity: .85; border-radius: 1px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .06) }
     .progress-target .dot { position: absolute; top: -6px; left: -4px; width: 8px; height: 8px; border-radius: 50%; background: #16a34a; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .12); opacity: .95 }
+
+    /* Ocultar columnas SIM cuando NO es modo equipos */
+    <?php if ($tipoDash !== 'equipos'): ?>
+      .col-sim { display:none !important; }
+    <?php endif; ?>
   </style>
 </head>
 
@@ -502,10 +572,24 @@ if ($hoyStr < $inicioSemana) {
   <?php include 'navbar.php'; ?>
 
   <div class="container mt-4">
-    <h2>📊 Dashboard Semanal</h2>
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <h2 class="mb-0">📊 <?= h($tituloDash) ?></h2>
+
+      <!-- Switch / selector de dashboard -->
+      <form method="GET" class="d-flex align-items-center gap-2">
+        <input type="hidden" name="semana" value="<?= (int)$semanaSeleccionada ?>">
+        <label class="small text-muted mb-0">Vista:</label>
+        <select name="tipo" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+          <option value="equipos"   <?= $tipoDash === 'equipos' ? 'selected' : '' ?>>Equipos</option>
+          <option value="sims"      <?= $tipoDash === 'sims' ? 'selected' : '' ?>>SIMs</option>
+          <option value="scooters"  <?= $tipoDash === 'scooters' ? 'selected' : '' ?>>Scooters</option>
+        </select>
+      </form>
+    </div>
 
     <!-- Selector de semana -->
-    <form method="GET" class="mb-3">
+    <form method="GET" class="mb-3 mt-3">
+      <input type="hidden" name="tipo" value="<?= h($tipoDash) ?>">
       <label><strong>Selecciona semana:</strong></label>
       <select name="semana" class="form-select w-auto d-inline-block" onchange="this.form.submit()">
         <?php for ($i = 0; $i < 8; $i++):
@@ -628,13 +712,11 @@ if ($hoyStr < $inicioSemana) {
                     <th class="d-none d-sm-table-cell col-fit">Total Ventas ($)</th>
                     <th class="col-fit">% Cumpl.</th>
 
-                    <!-- SIMs visibles en móvil -->
-                    <th class="d-table-cell d-md-none col-fit">SIM Prep.</th>
-                    <th class="d-table-cell d-md-none col-fit">SIM Pos.</th>
-
-                    <!-- SIMs escritorio -->
-                    <th class="d-none d-md-table-cell col-fit">SIM Prep.</th>
-                    <th class="d-none d-md-table-cell col-fit">SIM Pos.</th>
+                    <!-- SIMs (solo en modo equipos) -->
+                    <th class="col-sim d-table-cell d-md-none col-fit">SIM Prep.</th>
+                    <th class="col-sim d-table-cell d-md-none col-fit">SIM Pos.</th>
+                    <th class="col-sim d-none d-md-table-cell col-fit">SIM Prep.</th>
+                    <th class="col-sim d-none d-md-table-cell col-fit">SIM Pos.</th>
 
                     <th class="d-none d-sm-table-cell">Progreso</th>
                   </tr>
@@ -667,17 +749,14 @@ if ($hoyStr < $inicioSemana) {
                       </td>
                       <td class="num col-fit">
                         <?= number_format($cumpl, 1) ?>%
-                        <!-- icono solo en escritorio -->
                         <span class="d-none d-md-inline"><?= $estado ?></span>
                       </td>
 
-                      <!-- móvil -->
-                      <td class="d-table-cell d-md-none num col-fit"><?= (int)$r['sim_prepago'] ?></td>
-                      <td class="d-table-cell d-md-none num col-fit"><?= (int)$r['sim_pospago'] ?></td>
-
-                      <!-- escritorio -->
-                      <td class="d-none d-md-table-cell num col-fit"><?= (int)$r['sim_prepago'] ?></td>
-                      <td class="d-none d-md-table-cell num col-fit"><?= (int)$r['sim_pospago'] ?></td>
+                      <!-- SIMs (solo modo equipos) -->
+                      <td class="col-sim d-table-cell d-md-none num col-fit"><?= (int)$r['sim_prepago'] ?></td>
+                      <td class="col-sim d-table-cell d-md-none num col-fit"><?= (int)$r['sim_pospago'] ?></td>
+                      <td class="col-sim d-none d-md-table-cell num col-fit"><?= (int)$r['sim_prepago'] ?></td>
+                      <td class="col-sim d-none d-md-table-cell num col-fit"><?= (int)$r['sim_pospago'] ?></td>
 
                       <td class="d-none d-sm-table-cell">
                         <div class="progress" style="height:20px">
@@ -693,7 +772,7 @@ if ($hoyStr < $inicioSemana) {
         </div>
       </div>
 
-      <!-- Sucursales (AGRUPADAS POR ZONA) -->
+      <!-- Sucursales -->
       <div class="tab-pane fade" id="sucursales">
         <div class="card mb-4 shadow hide-delta" id="card_sucursales">
           <div class="card-header bg-dark text-white d-flex align-items-center justify-content-between">
@@ -708,6 +787,7 @@ if ($hoyStr < $inicioSemana) {
               </button>
             </div>
           </div>
+
           <div class="card-body">
             <div class="table-responsive-sm">
               <table class="table table-striped table-bordered align-middle table-sm">
@@ -715,20 +795,20 @@ if ($hoyStr < $inicioSemana) {
                   <tr>
                     <th>Sucursal</th>
 
-                    <!-- móvil (orden: Uds, $, %, Pre, Pos) -->
+                    <!-- móvil -->
                     <th class="d-table-cell d-md-none col-fit">Uds</th>
                     <th class="d-table-cell d-md-none col-fit">$</th>
                     <th class="d-table-cell d-md-none col-fit">% Cumpl.</th>
-                    <th class="d-table-cell d-md-none col-fit">Pre</th>
-                    <th class="d-table-cell d-md-none col-fit">Pos</th>
+                    <th class="col-sim d-table-cell d-md-none col-fit">Pre</th>
+                    <th class="col-sim d-table-cell d-md-none col-fit">Pos</th>
 
                     <!-- md+ -->
                     <th class="d-none d-md-table-cell">Zona</th>
                     <th class="d-none d-md-table-cell">Unidades</th>
                     <th class="d-none d-md-table-cell col-fit">Total Ventas ($)</th>
                     <th class="d-none d-md-table-cell col-fit">% Cumpl.</th>
-                    <th class="d-none d-md-table-cell col-fit">SIM Prep.</th>
-                    <th class="d-none d-md-table-cell col-fit">SIM Pos.</th>
+                    <th class="col-sim d-none d-md-table-cell col-fit">SIM Prep.</th>
+                    <th class="col-sim d-none d-md-table-cell col-fit">SIM Pos.</th>
                     <th class="d-none d-lg-table-cell col-fit">Cuota ($)</th>
                     <th class="d-none d-lg-table-cell">Progreso</th>
                   </tr>
@@ -736,7 +816,7 @@ if ($hoyStr < $inicioSemana) {
 
                 <tbody>
                   <?php foreach ($gruposZona as $zona => $grp): ?>
-                    <!-- Encabezado de grupo (ZONA) -->
+                    <!-- Encabezado zona -->
                     <tr class="table-secondary d-table-row d-md-none">
                       <th colspan="7" class="text-start"><?= h($zona) ?></th>
                     </tr>
@@ -747,7 +827,6 @@ if ($hoyStr < $inicioSemana) {
                       <th colspan="10" class="text-start"><?= h($zona) ?></th>
                     </tr>
 
-                    <!-- Filas de sucursales -->
                     <?php foreach ($grp['rows'] as $s):
                       $cumpl = round($s['cumplimiento'], 1);
                       $estado = $cumpl >= 100 ? "✅" : ($cumpl >= 60 ? "⚠️" : "❌");
@@ -763,17 +842,16 @@ if ($hoyStr < $inicioSemana) {
                           <span class="d-inline d-md-none"><?= h(sucursalCorta($s['sucursal'])) ?></span>
                         </td>
 
-                        <!-- móvil: Uds, $, %, Pre, Pos -->
+                        <!-- móvil -->
                         <td class="d-table-cell d-md-none num"><?= (int)$s['unidades'] ?></td>
                         <td class="d-table-cell d-md-none num">
                           <span class="money-abbr" data-raw="<?= (float)$s['total_ventas'] ?>">$<?= number_format($s['total_ventas'], 2) ?></span>
                         </td>
-                        <!-- 👇 ÍCONO REMOVIDO EN MÓVIL -->
                         <td class="d-table-cell d-md-none num"><?= number_format($cumpl, 1) ?>%</td>
-                        <td class="d-table-cell d-md-none num"><?= (int)$s['sim_prepago'] ?></td>
-                        <td class="d-table-cell d-md-none num"><?= (int)$s['sim_pospago'] ?></td>
+                        <td class="col-sim d-table-cell d-md-none num"><?= (int)$s['sim_prepago'] ?></td>
+                        <td class="col-sim d-table-cell d-md-none num"><?= (int)$s['sim_pospago'] ?></td>
 
-                        <!-- md+: Zona, Uds, Total, %Cumpl (con icono), SIMs, (Cuota), Progreso -->
+                        <!-- md+ -->
                         <td class="d-none d-md-table-cell"><?= h(normalizarZona($s['zona'] ?? '') ?? '—') ?></td>
                         <td class="d-none d-md-table-cell num"><?= (int)$s['unidades'] ?></td>
 
@@ -785,16 +863,14 @@ if ($hoyStr < $inicioSemana) {
                               <?= ($dM > 0 ? '+' : ($dM < 0 ? '' : '')) . '$' . number_format($dM, 2) ?>
                             </span>
                             <?php if ($pctM !== null): ?>
-                              <span class="text-muted">
-                                (<?= ($pctM >= 0 ? '+' : '') . number_format($pctM, 1) ?>%)
-                              </span>
+                              <span class="text-muted">(<?= ($pctM >= 0 ? '+' : '') . number_format($pctM, 1) ?>%)</span>
                             <?php endif; ?>
                           </div>
                         </td>
 
                         <td class="d-none d-md-table-cell num col-fit"><?= number_format($cumpl, 1) ?>% <?= $estado ?></td>
-                        <td class="d-none d-md-table-cell num col-fit"><?= (int)$s['sim_prepago'] ?></td>
-                        <td class="d-none d-md-table-cell num col-fit"><?= (int)$s['sim_pospago'] ?></td>
+                        <td class="col-sim d-none d-md-table-cell num col-fit"><?= (int)$s['sim_prepago'] ?></td>
+                        <td class="col-sim d-none d-md-table-cell num col-fit"><?= (int)$s['sim_pospago'] ?></td>
 
                         <td class="d-none d-lg-table-cell num col-fit">
                           <span class="money-abbr" data-raw="<?= (float)$s['cuota_semanal'] ?>">$<?= number_format($s['cuota_semanal'], 2) ?></span>
@@ -809,7 +885,7 @@ if ($hoyStr < $inicioSemana) {
                       </tr>
                     <?php endforeach; ?>
 
-                    <!-- Totales por ZONA -->
+                    <!-- Totales por zona -->
                     <?php
                     $tzU = (int)$grp['tot']['unidades'];
                     $tzV = (float)$grp['tot']['ventas'];
@@ -819,24 +895,22 @@ if ($hoyStr < $inicioSemana) {
                     $tzPos = (int)$grp['tot']['sim_pos'];
                     $cls = $tzP >= 100 ? 'bg-success' : ($tzP >= 60 ? 'bg-warning' : 'bg-danger');
                     ?>
-                    <!-- móvil total zona -->
                     <tr class="table-light fw-semibold d-table-row d-md-none">
                       <td class="text-end">Total <?= h($zona) ?>:</td>
                       <td class="num"><?= $tzU ?></td>
                       <td class="num"><span class="money-abbr" data-raw="<?= $tzV ?>">$<?= number_format($tzV, 2) ?></span></td>
                       <td class="num"><?= number_format($tzP, 1) ?>%</td>
-                      <td class="num"><?= $tzPre ?></td>
-                      <td class="num"><?= $tzPos ?></td>
+                      <td class="col-sim num"><?= $tzPre ?></td>
+                      <td class="col-sim num"><?= $tzPos ?></td>
                     </tr>
 
-                    <!-- md+ total zona -->
                     <tr class="table-light fw-semibold d-none d-md-table-row">
                       <td colspan="2" class="text-end">Total <?= h($zona) ?>:</td>
                       <td class="num"><?= $tzU ?></td>
                       <td class="num col-fit"><span class="money-abbr" data-raw="<?= $tzV ?>">$<?= number_format($tzV, 2) ?></span></td>
                       <td class="num col-fit"><?= number_format($tzP, 1) ?>%</td>
-                      <td class="num col-fit"><?= $tzPre ?></td>
-                      <td class="num col-fit"><?= $tzPos ?></td>
+                      <td class="col-sim num col-fit"><?= $tzPre ?></td>
+                      <td class="col-sim num col-fit"><?= $tzPos ?></td>
                       <td class="d-none d-lg-table-cell num col-fit"><span class="money-abbr" data-raw="<?= $tzC ?>">$<?= number_format($tzC, 2) ?></span></td>
                       <td class="d-none d-lg-table-cell">
                         <div class="progress" style="height:20px">
@@ -847,25 +921,24 @@ if ($hoyStr < $inicioSemana) {
 
                   <?php endforeach; ?>
 
-                  <!-- ====== TOTAL GLOBAL ====== -->
+                  <!-- Total global -->
                   <?php $clsG = $porcentajeGlobal >= 100 ? 'bg-success' : ($porcentajeGlobal >= 60 ? 'bg-warning' : 'bg-danger'); ?>
-                  <!-- móvil -->
                   <tr class="table-primary fw-bold d-table-row d-md-none">
                     <td class="text-end">Total global:</td>
                     <td class="num"><?= (int)$totalUnidades ?></td>
                     <td class="num"><span class="money-abbr" data-raw="<?= (float)$totalVentasGlobal ?>">$<?= number_format($totalVentasGlobal, 2) ?></span></td>
                     <td class="num"><?= number_format($porcentajeGlobal, 1) ?>%</td>
-                    <td class="num"><?= (int)$totalSimPre ?></td>
-                    <td class="num"><?= (int)$totalSimPos ?></td>
+                    <td class="col-sim num"><?= (int)$totalSimPre ?></td>
+                    <td class="col-sim num"><?= (int)$totalSimPos ?></td>
                   </tr>
-                  <!-- md+ -->
+
                   <tr class="table-primary fw-bold d-none d-md-table-row">
                     <td colspan="2" class="text-end">Total global:</td>
                     <td class="num"><?= (int)$totalUnidades ?></td>
                     <td class="num col-fit"><span class="money-abbr" data-raw="<?= (float)$totalVentasGlobal ?>">$<?= number_format($totalVentasGlobal, 2) ?></span></td>
                     <td class="num col-fit"><?= number_format($porcentajeGlobal, 1) ?>%</td>
-                    <td class="num col-fit"><?= (int)$totalSimPre ?></td>
-                    <td class="num col-fit"><?= (int)$totalSimPos ?></td>
+                    <td class="col-sim num col-fit"><?= (int)$totalSimPre ?></td>
+                    <td class="col-sim num col-fit"><?= (int)$totalSimPos ?></td>
                     <td class="d-none d-lg-table-cell num col-fit"><span class="money-abbr" data-raw="<?= (float)$totalCuotaGlobal ?>">$<?= number_format($totalCuotaGlobal, 2) ?></span></td>
                     <td class="d-none d-lg-table-cell">
                       <div class="progress" style="height:20px">
@@ -873,16 +946,15 @@ if ($hoyStr < $inicioSemana) {
                       </div>
                     </td>
                   </tr>
-                  <!-- ====== /TOTAL GLOBAL ====== -->
 
                 </tbody>
               </table>
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
+      </div><!-- /tab sucursales -->
+    </div><!-- /tab content -->
+  </div><!-- /container -->
 
   <!-- libs -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -902,8 +974,7 @@ if ($hoyStr < $inicioSemana) {
 
     function buildTop(metric) {
       const arr = [...ALL_SUC].sort((a, b) => (b[metric] || 0) - (a[metric] || 0));
-      const labels = [],
-        data = [];
+      const labels = [], data = [];
       let otras = 0;
       arr.forEach((r, idx) => {
         if (idx < TOP_BARS) {
@@ -917,10 +988,7 @@ if ($hoyStr < $inicioSemana) {
         labels.push('Otras');
         data.push(otras);
       }
-      return {
-        labels,
-        data
-      };
+      return { labels, data };
     }
 
     let currentMetric = 'unidades';
@@ -944,25 +1012,18 @@ if ($hoyStr < $inicioSemana) {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: {
-            display: false
-          },
+          legend: { display: false },
           tooltip: {
             callbacks: {
-              label: (ctx) => isMoney ? ' $' + Number(ctx.parsed.y).toLocaleString('es-MX', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2
-                }) :
-                ' ' + ctx.parsed.y.toLocaleString('es-MX') + ' u.'
+              label: (ctx) => isMoney
+                ? ' $' + Number(ctx.parsed.y).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                : ' ' + ctx.parsed.y.toLocaleString('es-MX') + ' u.'
             }
           }
         },
         scales: {
           x: {
-            title: {
-              display: true,
-              text: 'Sucursales'
-            },
+            title: { display: true, text: 'Sucursales' },
             ticks: {
               autoSkip: false,
               maxRotation: 45,
@@ -972,37 +1033,25 @@ if ($hoyStr < $inicioSemana) {
                 return l.length > 14 ? l.slice(0, 12) + '…' : l;
               }
             },
-            grid: {
-              display: false
-            }
+            grid: { display: false }
           },
           y: {
             beginAtZero: true,
-            title: {
-              display: true,
-              text: isMoney ? 'Ventas ($)' : 'Unidades'
-            }
+            title: { display: true, text: isMoney ? 'Ventas ($)' : 'Unidades' }
           }
         },
         elements: {
-          bar: {
-            borderRadius: 4,
-            barThickness: 'flex',
-            maxBarThickness: 42
-          }
+          bar: { borderRadius: 4, barThickness: 'flex', maxBarThickness: 42 }
         }
       };
       if (chart) chart.destroy();
-      chart = new Chart(ctx, {
-        type: 'bar',
-        data,
-        options
-      });
+      chart = new Chart(ctx, { type: 'bar', data, options });
     }
 
     renderChart();
     const btnU = document.getElementById('btnUnidades'),
-      btnV = document.getElementById('btnVentas');
+          btnV = document.getElementById('btnVentas');
+
     btnU.addEventListener('click', () => {
       currentMetric = 'unidades';
       btnU.className = 'btn btn-primary';
@@ -1020,10 +1069,7 @@ if ($hoyStr < $inicioSemana) {
        Abreviar montos (tablas)
     =========================== */
     (function() {
-      const nf = new Intl.NumberFormat('es-MX', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      });
+      const nf = new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
       function abbr(n) {
         const abs = Math.abs(n);
@@ -1052,14 +1098,12 @@ if ($hoyStr < $inicioSemana) {
       function prepOverflow(el, setVisible) {
         const affected = [];
         el.querySelectorAll('.table-responsive, .table-responsive-sm, .table-responsive-md, .table-responsive-lg').forEach(div => {
-          affected.push({
-            node: div,
-            prev: div.style.overflow
-          });
+          affected.push({ node: div, prev: div.style.overflow });
           if (setVisible) div.style.overflow = 'visible';
         });
         return affected;
       }
+
       async function snapCard(cardId, filename) {
         const el = document.getElementById(cardId);
         if (!el) return;
@@ -1084,10 +1128,7 @@ if ($hoyStr < $inicioSemana) {
         el.scrollTop = prev.scrollTop;
         el.scrollLeft = prev.scrollLeft;
         el.style.boxShadow = prev.boxShadow;
-        overflowFixes.forEach(({
-          node,
-          prev
-        }) => node.style.overflow = prev);
+        overflowFixes.forEach(({ node, prev }) => node.style.overflow = prev);
         const link = document.createElement('a');
         link.download = filename;
         link.href = canvas.toDataURL('image/png');
@@ -1095,6 +1136,7 @@ if ($hoyStr < $inicioSemana) {
         link.click();
         document.body.removeChild(link);
       }
+
       const btnEj = document.getElementById('btnSnapEj');
       if (btnEj) btnEj.addEventListener('click', () => snapCard('card_ejecutivos', `ranking_ejecutivos_${rango}.png`));
       const btnSu = document.getElementById('btnSnapSuc');
@@ -1126,5 +1168,4 @@ if ($hoyStr < $inicioSemana) {
     })();
   </script>
 </body>
-
 </html>

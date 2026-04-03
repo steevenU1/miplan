@@ -4,6 +4,7 @@
 // Equipos: captura IMEI y crea 1 producto + inventario por pieza.
 // Accesorios: al confirmar, crea/ubica el producto y hace UPSERT en inventario (por sucursal),
 //             además inserta N filas en compras_detalle_ingresos (IMEI null) para cerrar pendientes.
+// Scooters: captura Número de serie (alfa-numérico, longitud variable) en imei1 y crea 1 producto + inventario por pieza.
 
 session_start();
 if (!isset($_SESSION['id_usuario'])) {
@@ -254,17 +255,26 @@ $fuenteSugerido = $sugerencia['fuente'];
 $ultimoST = ultimoSubtipo($conn, $codigoCat, $marcaDet, $modeloDet, $ramDet, $capDet);
 $subtipoForm = $ultimoST['subtipo'] ?? ($cat['subtipo'] ?? null);
 
-/* ===== ¿Es accesorio? ===== */
+/* ===== Tipo de producto (Accesorio / Scooter / Equipo) ===== */
 $tipoProductoCat = $cat['tipo_producto'] ?? null;
+$esScooter = is_string($tipoProductoCat) && mb_strtolower($tipoProductoCat, 'UTF-8') === 'scooter';
+
+// Accesorio: como antes, pero nunca tratamos Scooter como accesorio
 $esAccesorio = (!$requiereImei) || (is_string($tipoProductoCat) && mb_strtolower($tipoProductoCat, 'UTF-8') === 'accesorio');
+if ($esScooter) {
+  $esAccesorio = false;
+}
 
 /* ===== POST ===== */
 $errorMsg = "";
 $precioListaForm = number_format((float)$precioSugerido, 2, '.', '');
 $oldImei1 = [];
 $oldImei2 = [];
+$oldSerie = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+  /* ========= ACCESORIOS ========= */
   if ($esAccesorio) {
     // ACCESORIOS: crear/ubicar producto y actualizar inventario aquí
     $cantidadMarcar = max(0, (int)($_POST['cantidad_marcar'] ?? $pendientes));
@@ -380,173 +390,330 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
   }
 
-  /* ===== EQUIPOS (con IMEI) — flujo existente ===== */
-  $n = max(0, (int)($_POST['n'] ?? 0));
-  if ($n <= 0) {
-    header("Location: compras_ver.php?id=" . $compraId);
-    exit();
-  }
-  if ($n > $pendientes) $n = $pendientes;
+  /* ========= SCOOTERS (Número de serie) ========= */
+  if ($esScooter) {
+    $n = max(0, (int)($_POST['n'] ?? 0));
+    if ($n <= 0) {
+      header("Location: compras_ver.php?id=" . $compraId);
+      exit();
+    }
+    if ($n > $pendientes) $n = $pendientes;
 
-  $precioListaForm = trim($_POST['precio_lista'] ?? '');
-  $precioListaCapturado = parse_money($precioListaForm);
-  if ($precioListaCapturado === null || $precioListaCapturado <= 0) {
-    $errorMsg = "Precio de lista inválido. Usa números, ejemplo: 3999.00";
-  }
+    $precioListaForm = trim($_POST['precio_lista'] ?? '');
+    $precioListaCapturado = parse_money($precioListaForm);
+    if ($precioListaCapturado === null || $precioListaCapturado <= 0) {
+      $errorMsg = "Precio de lista inválido. Usa números, ejemplo: 11999.00";
+    }
 
-  for ($i = 0; $i < $n; $i++) {
-    $oldImei1[$i] = preg_replace('/\D+/', '', (string)($_POST['imei1'][$i] ?? ''));
-    $oldImei2[$i] = preg_replace('/\D+/', '', (string)($_POST['imei2'][$i] ?? ''));
-  }
-
-  if ($errorMsg === "") {
-    $seen = [];
-    $dupsForm = [];
+    // Guardar valores para repintar en caso de error
     for ($i = 0; $i < $n; $i++) {
-      foreach (['imei1', 'imei2'] as $col) {
-        $val = preg_replace('/\D+/', '', (string)($_POST[$col][$i] ?? ''));
-        if ($val !== '' && preg_match('/^\d{15}$/', $val)) {
-          if (!isset($seen[$val])) $seen[$val] = [];
-          $seen[$val][] = $i + 1;
-        }
-      }
+      $oldSerie[$i] = trim((string)($_POST['serie'][$i] ?? ''));
     }
-    foreach ($seen as $val => $rows) {
-      if (count($rows) > 1) {
-        $dupsForm[$val] = $rows;
-      }
-    }
-    if (!empty($dupsForm)) {
-      $msg = "Se detectaron IMEI duplicados en el formulario:\n";
-      foreach ($dupsForm as $val => $rows) {
-        $msg .= " - $val repetido en filas " . implode(', ', $rows) . "\n";
-      }
-      $errorMsg = nl2br(esc($msg));
-    }
-  }
 
-  if ($errorMsg === "") {
-    for ($i = 0; $i < $n && $errorMsg === ""; $i++) {
-      foreach ([['col' => 'imei1', 'label' => 'IMEI1'], ['col' => 'imei2', 'label' => 'IMEI2']] as $spec) {
-        $raw = trim((string)($_POST[$spec['col']][$i] ?? ''));
-        $val = preg_replace('/\D+/', '', $raw);
-        if ($val === '') continue;
-        if (!preg_match('/^\d{15}$/', $val) || !luhn_ok($val)) {
-          $errorMsg = $spec['label'] . " inválido en la fila " . ($i + 1) . ".";
+    // Validaciones de series en formulario
+    if ($errorMsg === "") {
+      $seen = [];
+      for ($i = 0; $i < $n; $i++) {
+        $serie = $oldSerie[$i] ?? '';
+        $serie = trim($serie);
+        if ($serie === '') {
+          $errorMsg = "Número de serie vacío en la fila " . ($i + 1) . ".";
           break;
         }
+        if (mb_strlen($serie, 'UTF-8') > 30) {
+          $errorMsg = "Número de serie demasiado largo (máx. 30 caracteres) en la fila " . ($i + 1) . ".";
+          break;
+        }
+        // Permitimos letras, números y guiones básicos. Si quieres, aquí lo hacemos aún más laxo.
+        if (!preg_match('/^[A-Za-z0-9\-]+$/u', $serie)) {
+          $errorMsg = "Número de serie con caracteres inválidos en la fila " . ($i + 1) . ". Usa letras, números y guiones.";
+          break;
+        }
+        if (!isset($seen[$serie])) $seen[$serie] = [];
+        $seen[$serie][] = $i + 1;
+      }
+      if ($errorMsg === "") {
+        foreach ($seen as $serie => $rows) {
+          if (count($rows) > 1) {
+            $errorMsg = "Número de serie '$serie' repetido en filas " . implode(', ', $rows) . ".";
+            break;
+          }
+        }
+      }
+    }
+
+    // Validar duplicados en BD
+    if ($errorMsg === "") {
+      for ($i = 0; $i < $n; $i++) {
+        $serie = trim($oldSerie[$i] ?? '');
         $st = $conn->prepare("SELECT COUNT(*) c FROM productos WHERE imei1=? OR imei2=?");
-        $st->bind_param("ss", $val, $val);
+        $st->bind_param("ss", $serie, $serie);
         $st->execute();
         $st->bind_result($cdup);
         $st->fetch();
         $st->close();
         if ($cdup > 0) {
-          $errorMsg = $spec['label'] . " duplicado en BD en la fila " . ($i + 1) . ": $val";
+          $errorMsg = "Número de serie duplicado en BD en la fila " . ($i + 1) . ": " . esc($serie);
           break;
         }
       }
     }
+
+    if ($errorMsg === "") {
+      $conn->begin_transaction();
+      try {
+        for ($i = 0; $i < $n; $i++) {
+          $serie = trim($oldSerie[$i] ?? '');
+          if ($serie === '') {
+            throw new Exception("Número de serie vacío en la fila " . ($i + 1) . ".");
+          }
+
+          // Variables catálogo
+          $descripcion      = $cat['descripcion'] ?? null;
+          $nombreComercial  = $cat['nombre_comercial'] ?? null;
+          $compania         = $cat['compania'] ?? null;
+          $financiera       = $cat['financiera'] ?? null;
+          $fechaLanzamiento = $cat['fecha_lanzamiento'] ?? null;
+          $tipoProducto     = $cat['tipo_producto'] ?? 'Scooter';
+          $gama             = $cat['gama'] ?? null;
+          $cicloVida        = $cat['ciclo_vida'] ?? null;
+          $abc              = $cat['abc'] ?? null;
+          $operador         = $cat['operador'] ?? null;
+          $resurtible       = $cat['resurtible'] ?? null;
+
+          $stmtP = $conn->prepare("
+            INSERT INTO productos (
+              codigo_producto, marca, modelo, color, ram, capacidad,
+              imei1, imei2, costo, costo_con_iva, proveedor, precio_lista,
+              descripcion, nombre_comercial, compania, financiera, fecha_lanzamiento,
+              tipo_producto, subtipo, gama, ciclo_vida, abc, operador, resurtible
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          ");
+          $prov  = ($proveedorCompra !== '') ? $proveedorCompra : null;
+          $imei2 = null; // Scooters solo usan imei1 como número de serie
+          $stmtP->bind_param(
+            "ssssssssddsdssssssssssss",
+            $codigoCat,
+            $marcaDet,
+            $modeloDet,
+            $colorDet,
+            $ramDet,
+            $capDet,
+            $serie,
+            $imei2,
+            $costo,
+            $costoConIva,
+            $prov,
+            $precioListaCapturado,
+            $descripcion,
+            $nombreComercial,
+            $compania,
+            $financiera,
+            $fechaLanzamiento,
+            $tipoProducto,
+            $subtipoForm,
+            $gama,
+            $cicloVida,
+            $abc,
+            $operador,
+            $resurtible
+          );
+          $stmtP->execute();
+          $idProducto = $stmtP->insert_id;
+          $stmtP->close();
+
+          // Alta a inventario
+          $stmtI = $conn->prepare("INSERT INTO inventario (id_producto, id_sucursal, estatus) VALUES (?, ?, 'Disponible')");
+          $stmtI->bind_param("ii", $idProducto, $enc['id_sucursal']);
+          $stmtI->execute();
+          $stmtI->close();
+
+          // Registrar ingreso (guardamos serie en imei1)
+          $stmtR = $conn->prepare("INSERT INTO compras_detalle_ingresos (id_detalle, imei1, imei2, id_producto) VALUES (?,?,?,?)");
+          $stmtR->bind_param("issi", $detalleId, $serie, $imei2, $idProducto);
+          $stmtR->execute();
+          $stmtR->close();
+        }
+
+        $conn->commit();
+        header("Location: compras_ver.php?id=" . $compraId);
+        exit();
+      } catch (Exception $e) {
+        $conn->rollback();
+        $errorMsg = $e->getMessage();
+      }
+    }
   }
 
-  if ($errorMsg === "") {
-    $conn->begin_transaction();
-    try {
-      for ($i = 0; $i < $n; $i++) {
-        $imei1 = preg_replace('/\D+/', '', (string)($_POST['imei1'][$i] ?? ''));
-        $imei2 = preg_replace('/\D+/', '', (string)($_POST['imei2'][$i] ?? ''));
-
-        if ($requiereImei) {
-          if ($imei1 === '' || !preg_match('/^\d{15}$/', $imei1) || !luhn_ok($imei1)) {
-            throw new Exception("IMEI1 inválido en la fila " . ($i + 1) . ".");
-          }
-        } else {
-          if ($imei1 !== '' && (!preg_match('/^\d{15}$/', $imei1) || !luhn_ok($imei1))) {
-            throw new Exception("IMEI1 inválido (si lo capturas deben ser 15 dígitos Luhn) en la fila " . ($i + 1) . ".");
-          }
-          if ($imei1 === '') $imei1 = null;
-        }
-        if ($imei2 !== '') {
-          if (!preg_match('/^\d{15}$/', $imei2) || !luhn_ok($imei2)) {
-            throw new Exception("IMEI2 inválido en la fila " . ($i + 1) . ".");
-          }
-        } else {
-          $imei2 = null;
-        }
-
-        // Variables catálogo
-        $descripcion      = $cat['descripcion'] ?? null;
-        $nombreComercial  = $cat['nombre_comercial'] ?? null;
-        $compania         = $cat['compania'] ?? null;
-        $financiera       = $cat['financiera'] ?? null;
-        $fechaLanzamiento = $cat['fecha_lanzamiento'] ?? null;
-        $tipoProducto     = $cat['tipo_producto'] ?? null;
-        $gama             = $cat['gama'] ?? null;
-        $cicloVida        = $cat['ciclo_vida'] ?? null;
-        $abc              = $cat['abc'] ?? null;
-        $operador         = $cat['operador'] ?? null;
-        $resurtible       = $cat['resurtible'] ?? null;
-
-        // Crear producto (una unidad)
-        $stmtP = $conn->prepare("
-          INSERT INTO productos (
-            codigo_producto, marca, modelo, color, ram, capacidad,
-            imei1, imei2, costo, costo_con_iva, proveedor, precio_lista,
-            descripcion, nombre_comercial, compania, financiera, fecha_lanzamiento,
-            tipo_producto, subtipo, gama, ciclo_vida, abc, operador, resurtible
-          ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        ");
-        $prov  = ($proveedorCompra !== '') ? $proveedorCompra : null;
-        $stmtP->bind_param(
-          "ssssssssddsdssssssssssss",
-          $codigoCat,
-          $marcaDet,
-          $modeloDet,
-          $colorDet,
-          $ramDet,
-          $capDet,
-          $imei1,
-          $imei2,
-          $costo,
-          $costoConIva,
-          $prov,
-          $precioListaCapturado,
-          $descripcion,
-          $nombreComercial,
-          $compania,
-          $financiera,
-          $fechaLanzamiento,
-          $tipoProducto,
-          $subtipoForm,
-          $gama,
-          $cicloVida,
-          $abc,
-          $operador,
-          $resurtible
-        );
-        $stmtP->execute();
-        $idProducto = $stmtP->insert_id;
-        $stmtP->close();
-
-        // Alta a inventario
-        $stmtI = $conn->prepare("INSERT INTO inventario (id_producto, id_sucursal, estatus) VALUES (?, ?, 'Disponible')");
-        $stmtI->bind_param("ii", $idProducto, $enc['id_sucursal']);
-        $stmtI->execute();
-        $stmtI->close();
-
-        // Registrar ingreso
-        $stmtR = $conn->prepare("INSERT INTO compras_detalle_ingresos (id_detalle, imei1, imei2, id_producto) VALUES (?,?,?,?)");
-        $stmtR->bind_param("issi", $detalleId, $imei1, $imei2, $idProducto);
-        $stmtR->execute();
-        $stmtR->close();
-      }
-
-      $conn->commit();
+  /* ===== EQUIPOS (con IMEI) — flujo existente ===== */
+  if (!$esAccesorio && !$esScooter) {
+    $n = max(0, (int)($_POST['n'] ?? 0));
+    if ($n <= 0) {
       header("Location: compras_ver.php?id=" . $compraId);
       exit();
-    } catch (Exception $e) {
-      $conn->rollback();
-      $errorMsg = $e->getMessage();
+    }
+    if ($n > $pendientes) $n = $pendientes;
+
+    $precioListaForm = trim($_POST['precio_lista'] ?? '');
+    $precioListaCapturado = parse_money($precioListaForm);
+    if ($precioListaCapturado === null || $precioListaCapturado <= 0) {
+      $errorMsg = "Precio de lista inválido. Usa números, ejemplo: 3999.00";
+    }
+
+    for ($i = 0; $i < $n; $i++) {
+      $oldImei1[$i] = preg_replace('/\D+/', '', (string)($_POST['imei1'][$i] ?? ''));
+      $oldImei2[$i] = preg_replace('/\D+/', '', (string)($_POST['imei2'][$i] ?? ''));
+    }
+
+    if ($errorMsg === "") {
+      $seen = [];
+      $dupsForm = [];
+      for ($i = 0; $i < $n; $i++) {
+        foreach (['imei1', 'imei2'] as $col) {
+          $val = preg_replace('/\D+/', '', (string)($_POST[$col][$i] ?? ''));
+          if ($val !== '' && preg_match('/^\d{15}$/', $val)) {
+            if (!isset($seen[$val])) $seen[$val] = [];
+            $seen[$val][] = $i + 1;
+          }
+        }
+      }
+      foreach ($seen as $val => $rows) {
+        if (count($rows) > 1) {
+          $dupsForm[$val] = $rows;
+        }
+      }
+      if (!empty($dupsForm)) {
+        $msg = "Se detectaron IMEI duplicados en el formulario:\n";
+        foreach ($dupsForm as $val => $rows) {
+          $msg .= " - $val repetido en filas " . implode(', ', $rows) . "\n";
+        }
+        $errorMsg = nl2br(esc($msg));
+      }
+    }
+
+    if ($errorMsg === "") {
+      for ($i = 0; $i < $n && $errorMsg === ""; $i++) {
+        foreach ([['col' => 'imei1', 'label' => 'IMEI1'], ['col' => 'imei2', 'label' => 'IMEI2']] as $spec) {
+          $raw = trim((string)($_POST[$spec['col']][$i] ?? ''));
+          $val = preg_replace('/\D+/', '', $raw);
+          if ($val === '') continue;
+          if (!preg_match('/^\d{15}$/', $val) || !luhn_ok($val)) {
+            $errorMsg = $spec['label'] . " inválido en la fila " . ($i + 1) . ".";
+            break;
+          }
+          $st = $conn->prepare("SELECT COUNT(*) c FROM productos WHERE imei1=? OR imei2=?");
+          $st->bind_param("ss", $val, $val);
+          $st->execute();
+          $st->bind_result($cdup);
+          $st->fetch();
+          $st->close();
+          if ($cdup > 0) {
+            $errorMsg = $spec['label'] . " duplicado en BD en la fila " . ($i + 1) . ": $val";
+            break;
+          }
+        }
+      }
+    }
+
+    if ($errorMsg === "") {
+      $conn->begin_transaction();
+      try {
+        for ($i = 0; $i < $n; $i++) {
+          $imei1 = preg_replace('/\D+/', '', (string)($_POST['imei1'][$i] ?? ''));
+          $imei2 = preg_replace('/\D+/', '', (string)($_POST['imei2'][$i] ?? ''));
+
+          if ($requiereImei) {
+            if ($imei1 === '' || !preg_match('/^\d{15}$/', $imei1) || !luhn_ok($imei1)) {
+              throw new Exception("IMEI1 inválido en la fila " . ($i + 1) . ".");
+            }
+          } else {
+            if ($imei1 !== '' && (!preg_match('/^\d{15}$/', $imei1) || !luhn_ok($imei1))) {
+              throw new Exception("IMEI1 inválido (si lo capturas deben ser 15 dígitos Luhn) en la fila " . ($i + 1) . ".");
+            }
+            if ($imei1 === '') $imei1 = null;
+          }
+          if ($imei2 !== '') {
+            if (!preg_match('/^\d{15}$/', $imei2) || !luhn_ok($imei2)) {
+              throw new Exception("IMEI2 inválido en la fila " . ($i + 1) . ".");
+            }
+          } else {
+            $imei2 = null;
+          }
+
+          // Variables catálogo
+          $descripcion      = $cat['descripcion'] ?? null;
+          $nombreComercial  = $cat['nombre_comercial'] ?? null;
+          $compania         = $cat['compania'] ?? null;
+          $financiera       = $cat['financiera'] ?? null;
+          $fechaLanzamiento = $cat['fecha_lanzamiento'] ?? null;
+          $tipoProducto     = $cat['tipo_producto'] ?? null;
+          $gama             = $cat['gama'] ?? null;
+          $cicloVida        = $cat['ciclo_vida'] ?? null;
+          $abc              = $cat['abc'] ?? null;
+          $operador         = $cat['operador'] ?? null;
+          $resurtible       = $cat['resurtible'] ?? null;
+
+          // Crear producto (una unidad)
+          $stmtP = $conn->prepare("
+            INSERT INTO productos (
+              codigo_producto, marca, modelo, color, ram, capacidad,
+              imei1, imei2, costo, costo_con_iva, proveedor, precio_lista,
+              descripcion, nombre_comercial, compania, financiera, fecha_lanzamiento,
+              tipo_producto, subtipo, gama, ciclo_vida, abc, operador, resurtible
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          ");
+          $prov  = ($proveedorCompra !== '') ? $proveedorCompra : null;
+          $stmtP->bind_param(
+            "ssssssssddsdssssssssssss",
+            $codigoCat,
+            $marcaDet,
+            $modeloDet,
+            $colorDet,
+            $ramDet,
+            $capDet,
+            $imei1,
+            $imei2,
+            $costo,
+            $costoConIva,
+            $prov,
+            $precioListaCapturado,
+            $descripcion,
+            $nombreComercial,
+            $compania,
+            $financiera,
+            $fechaLanzamiento,
+            $tipoProducto,
+            $subtipoForm,
+            $gama,
+            $cicloVida,
+            $abc,
+            $operador,
+            $resurtible
+          );
+          $stmtP->execute();
+          $idProducto = $stmtP->insert_id;
+          $stmtP->close();
+
+          // Alta a inventario
+          $stmtI = $conn->prepare("INSERT INTO inventario (id_producto, id_sucursal, estatus) VALUES (?, ?, 'Disponible')");
+          $stmtI->bind_param("ii", $idProducto, $enc['id_sucursal']);
+          $stmtI->execute();
+          $stmtI->close();
+
+          // Registrar ingreso
+          $stmtR = $conn->prepare("INSERT INTO compras_detalle_ingresos (id_detalle, imei1, imei2, id_producto) VALUES (?,?,?,?)");
+          $stmtR->bind_param("issi", $detalleId, $imei1, $imei2, $idProducto);
+          $stmtR->execute();
+          $stmtR->close();
+        }
+
+        $conn->commit();
+        header("Location: compras_ver.php?id=" . $compraId);
+        exit();
+      } catch (Exception $e) {
+        $conn->rollback();
+        $errorMsg = $e->getMessage();
+      }
     }
   }
 }
@@ -625,6 +792,65 @@ include 'navbar.php';
             </div>
           </form>
 
+        <?php elseif ($esScooter): ?>
+          <div class="alert alert-info">
+            Este renglón es <strong>Scooter</strong>. Se captura <strong>Número de serie</strong> por unidad (puede contener letras y números, máx. 30 caracteres).<br>
+            El número de serie se guarda en el campo <code>imei1</code> pero sin validación de IMEI.
+          </div>
+
+          <?php if (!empty($errorMsg)): ?>
+            <div class="alert alert-danger"><?= $errorMsg ?></div>
+          <?php endif; ?>
+
+          <form id="formScooter" method="POST" autocomplete="off">
+            <input type="hidden" name="n" value="<?= $pendientes ?>">
+
+            <div class="row g-3 mb-3">
+              <div class="col-md-4">
+                <label class="form-label">Subtipo (asignación automática)</label>
+                <input type="text" class="form-control" value="<?= esc($subtipoForm ?? '—') ?>" disabled>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Precio de lista (por modelo)</label>
+                <input type="text" name="precio_lista" class="form-control" inputmode="decimal" value="<?= esc(number_format((float)$precioSugerido, 2, '.', '')) ?>" required>
+                <small class="text-muted">Sugerido: $<?= number_format((float)$precioSugerido, 2) ?> (<?= esc($fuenteSugerido) ?>)</small>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th style="min-width:260px">Número de serie *</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php for ($i = 0; $i < $pendientes; $i++): ?>
+                    <tr>
+                      <td><?= $i + 1 ?></td>
+                      <td>
+                        <input
+                          class="form-control"
+                          name="serie[]"
+                          maxlength="30"
+                          placeholder="Ej: SCOOT123XYZ"
+                          value="<?= esc($oldSerie[$i] ?? '') ?>"
+                          <?= $i === 0 ? 'autofocus' : '' ?>
+                        >
+                      </td>
+                    </tr>
+                  <?php endfor; ?>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="text-end">
+              <button id="btnSubmitScooter" type="submit" class="btn btn-success">Ingresar Scooters</button>
+              <a href="compras_ver.php?id=<?= (int)$compraId ?>" class="btn btn-outline-secondary">Cancelar</a>
+            </div>
+          </form>
+
         <?php else: ?>
           <?php if (!empty($errorMsg)): ?>
             <div class="alert alert-danger"><?= $errorMsg ?></div>
@@ -692,7 +918,7 @@ include 'navbar.php';
   </div>
 </div>
 
-<?php if (!$esAccesorio): ?>
+<?php if (!$esAccesorio && !$esScooter): ?>
   <!-- Validación en vivo para IMEI (equipos) -->
   <script>
     (function() {

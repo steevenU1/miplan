@@ -1,5 +1,5 @@
 <?php
-// generar_traspaso_mp_almacen.php — Mi Plan (equipos + accesorios en carrito, fixes IMEI vacíos)
+// generar_traspaso_mp_almacen.php — Mi Plan (equipos + accesorios + scooters en carrito)
 session_start();
 if (!isset($_SESSION['id_usuario']) || !in_array(($_SESSION['rol'] ?? ''), ['Admin','Gerente'], true)) {
   header("Location: 403.php"); exit();
@@ -65,6 +65,7 @@ if ($idCentral <= 0) {
    2) Procesar TRASPASO (POST)
    =============================== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  // Equipos + Scooters (unitarios)
   $equiposSeleccionados = isset($_POST['equipos']) && is_array($_POST['equipos']) ? $_POST['equipos'] : [];
   $idSucursalDestino    = (int)($_POST['sucursal_destino'] ?? 0);
   $idUsuario            = (int)($_SESSION['id_usuario'] ?? 0);
@@ -87,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>";
   } elseif (empty($equiposSeleccionados) && empty($accToMove)) {
     $mensaje = "<div class='alert alert-warning alert-dismissible fade show shadow-sm' role='alert'>
-                  No seleccionaste ningún equipo ni capturaste cantidades de accesorios.
+                  No seleccionaste ningún equipo/Scooter ni capturaste cantidades de accesorios.
                   <button type='button' class='btn-close' data-bs-dismiss='alert' aria-label='Cerrar'></button>
                 </div>";
   } elseif ($idSucursalDestino === $idCentral) {
@@ -110,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $idTraspaso = (int)$stmt->insert_id;
       $stmt->close();
 
-      /* ===== Equipos (unitarios) ===== */
+      /* ===== Equipos/Scooters (unitarios) ===== */
       if (!empty($idsInv)) {
         $placeholders = implode(',', array_fill(0, count($idsInv), '?'));
         $typesIds = str_repeat('i', count($idsInv));
@@ -128,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         while ($r = $rsVal->fetch_assoc()) $validos[] = (int)$r['id'];
         $stmtVal->close();
         if (count($validos) !== count($idsInv)) {
-          throw new Exception("Algunos equipos ya no están disponibles en {$CENTRAL_NAME} o cambiaron de estatus.");
+          throw new Exception("Algunos equipos/Scooters ya no están disponibles en {$CENTRAL_NAME} o cambiaron de estatus.");
         }
 
         $stmtDet = $conn->prepare("INSERT INTO detalle_traspaso (id_traspaso, id_inventario) VALUES (?,?)");
@@ -140,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
           $stmtUpd->bind_param("ii", $idInv, $idCentral);
           $stmtUpd->execute();
-          if ($stmtUpd->affected_rows !== 1) throw new Exception("Fallo al actualizar inventario #$idInv (equipos)");
+          if ($stmtUpd->affected_rows !== 1) throw new Exception("Fallo al actualizar inventario #$idInv (unitario)");
         }
         $stmtDet->close();
         $stmtUpd->close();
@@ -169,7 +170,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmtDec = $conn->prepare("UPDATE inventario SET cantidad = cantidad - ? WHERE id=? AND cantidad >= ?");
         $stmtDel = $conn->prepare("DELETE FROM inventario WHERE id=? AND cantidad <= 0");
         $stmtInsTransit = $conn->prepare("INSERT INTO inventario (id_producto, id_sucursal, estatus, cantidad) VALUES (?, ?, 'En tránsito', ?)");
-        $stmtDetAcc = $conn->prepare("INSERT INTO detalle_traspaso (id_traspaso, id_inventario) VALUES (?, ?)");
+        // detalle_traspaso incluye cantidad para accesorios
+        $stmtDetAcc = $conn->prepare("INSERT INTO detalle_traspaso (id_traspaso, id_inventario, cantidad) VALUES (?, ?, ?)");
 
         foreach ($accToMove as $acc) {
           $pid = (int)$acc['id_producto'];
@@ -208,12 +210,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $resRows->free();
           if ($rem > 0) throw new Exception("No se pudo completar descuento de accesorio (#$pid).");
 
-          // Crear fila En tránsito y detalle
+          // Crear fila En tránsito y detalle (con cantidad)
           $stmtInsTransit->bind_param("iii", $pid, $idCentral, $q);
           if (!$stmtInsTransit->execute()) throw new Exception("No se pudo crear 'En tránsito' (accesorio).");
           $idInvTransit = (int)$stmtInsTransit->insert_id;
 
-          $stmtDetAcc->bind_param("ii", $idTraspaso, $idInvTransit);
+          $stmtDetAcc->bind_param("iii", $idTraspaso, $idInvTransit, $q);
           if (!$stmtDetAcc->execute()) throw new Exception("No se pudo vincular detalle (accesorio).");
         }
 
@@ -248,15 +250,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 /* ===============================
    3) Inventario EQUIPOS (unitarios / con IMEI)
-   — FIX: aceptar IMEI no vacío ('' ≠ NULL)
+   — Excluimos Scooters, que van en su propia pestaña.
    =============================== */
 $sqlEq = "
-SELECT i.id, p.marca, p.modelo, p.color, p.imei1, p.imei2
+SELECT i.id, p.marca, p.modelo, p.color, p.imei1, p.imei2, p.tipo_producto
 FROM inventario i
 INNER JOIN productos p ON p.id = i.id_producto
 WHERE i.id_sucursal=? 
   AND i.estatus='Disponible'
   AND COALESCE(NULLIF(TRIM(p.imei1),''), NULLIF(TRIM(p.imei2),'')) IS NOT NULL
+  AND (p.tipo_producto IS NULL OR p.tipo_producto <> 'Scooter')
 ORDER BY i.fecha_ingreso ASC, i.id ASC
 ";
 $stmtEq = $conn->prepare($sqlEq);
@@ -268,7 +271,7 @@ $stmtEq->close();
 
 /* ===============================
    3b) Inventario ACCESORIOS (por cantidad, agrupado)
-   — FIX: tratar IMEIs vacíos como NULL
+   — IMEIs vacíos se tratan como NULL.
    =============================== */
 $sqlAcc = "
 SELECT 
@@ -293,6 +296,25 @@ $stmtAcc->execute();
 $resAcc = $stmtAcc->get_result();
 $accesorios = $resAcc->fetch_all(MYSQLI_ASSOC);
 $stmtAcc->close();
+
+/* ===============================
+   3c) Inventario SCOOTERS (unitarios, por serie)
+   =============================== */
+$sqlScoot = "
+SELECT i.id, p.marca, p.modelo, p.color, p.imei1 AS serie1, p.imei2 AS serie2
+FROM inventario i
+INNER JOIN productos p ON p.id = i.id_producto
+WHERE i.id_sucursal=?
+  AND i.estatus='Disponible'
+  AND p.tipo_producto='Scooter'
+ORDER BY i.fecha_ingreso ASC, i.id ASC
+";
+$stmtScoot = $conn->prepare($sqlScoot);
+$stmtScoot->bind_param("i", $idCentral);
+$stmtScoot->execute();
+$resScoot = $stmtScoot->get_result();
+$scooters = $resScoot->fetch_all(MYSQLI_ASSOC);
+$stmtScoot->close();
 
 /* ===============================
    4) Sucursales DESTINO
@@ -334,9 +356,17 @@ while ($row = $resSuc->fetch_assoc()) $sucursales[] = $row;
       background:linear-gradient(180deg,#ffffff 40%,rgba(255,255,255,.7));
       padding:10px; border-bottom:1px solid #eef0f6; border-radius:12px;
     }
-    #tablaInventario thead.sticky{ position:sticky; top:0; z-index:5; background:#fff; }
-    #tablaInventario tbody tr:hover{ background:#f1f5ff !important; }
-    #tablaInventario th{ white-space:nowrap; }
+    #tablaEquipos thead.sticky,
+    #tablaAccesorios thead.sticky,
+    #tablaScooters thead.sticky{
+      position:sticky; top:0; z-index:5; background:#fff;
+    }
+    #tablaEquipos tbody tr:hover,
+    #tablaAccesorios tbody tr:hover,
+    #tablaScooters tbody tr:hover{ background:#f1f5ff !important; }
+    #tablaEquipos th,
+    #tablaAccesorios th,
+    #tablaScooters th{ white-space:nowrap; }
     .chip{ border:1px solid #e6e9f2; border-radius:999px; padding:.25rem .6rem; background:#fff; font-size:.8rem; }
     .table code{ color:inherit; background:#f8fafc; padding:2px 6px; border-radius:6px; }
     .sticky-aside{ position:sticky; top:92px; }
@@ -344,8 +374,6 @@ while ($row = $resSuc->fetch_assoc()) $sucursales[] = $row;
     .modal-xxl { max-width: 1200px; }
     #frameAcuse { width:100%; min-height:72vh; border:0; background:#fff; }
 
-    #tablaAccesorios thead.sticky{ position:sticky; top:0; z-index:5; background:#fff; }
-    #tablaAccesorios th{ white-space:nowrap; }
     .qty-input{ max-width: 120px; }
   </style>
 </head>
@@ -405,106 +433,191 @@ while ($row = $resSuc->fetch_assoc()) $sucursales[] = $row;
               </div>
             </div>
 
-            <!-- Buscador sticky (EQUIPOS) -->
-            <div class="search-wrap rounded-3 mb-2">
-              <div class="input-group">
-                <span class="input-group-text"><i class="bi bi-search"></i></span>
-                <input type="text" id="buscadorIMEI" class="form-control" placeholder="Buscar por IMEI, marca o modelo (EQUIPOS)...">
-                <button type="button" class="btn btn-outline-secondary" id="btnLimpiarBusqueda">
-                  <i class="bi bi-x-circle"></i>
+            <!-- Tabs para Equipos / Accesorios / Scooters -->
+            <ul class="nav nav-tabs nav-fill small mt-3" id="tabTraspasos" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="tab-equipos-tab" data-bs-toggle="tab" data-bs-target="#tab-equipos" type="button" role="tab">
+                  <i class="bi bi-phone me-1"></i>Equipos
                 </button>
-              </div>
-            </div>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-accesorios-tab" data-bs-toggle="tab" data-bs-target="#tab-accesorios" type="button" role="tab">
+                  <i class="bi bi-headphones me-1"></i>Accesorios
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-scooters-tab" data-bs-toggle="tab" data-bs-target="#tab-scooters" type="button" role="tab">
+                  <i class="bi bi-lightning-charge me-1"></i>Scooters
+                </button>
+              </li>
+            </ul>
 
-            <!-- Inventario EQUIPOS -->
-            <div class="card shadow-sm">
-              <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div class="d-flex align-items-center gap-2">
-                  <i class="bi bi-phone text-primary"></i>
-                  <span><strong>Equipos (unitarios)</strong> disponibles en <?php echo htmlspecialchars($CENTRAL_NAME); ?></span>
+            <div class="tab-content border border-top-0 rounded-bottom-3 bg-white p-3">
+              <!-- TAB EQUIPOS -->
+              <div class="tab-pane fade show active" id="tab-equipos" role="tabpanel" aria-labelledby="tab-equipos-tab">
+                <!-- Buscador sticky (EQUIPOS) -->
+                <div class="search-wrap rounded-3 mb-2">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" id="buscadorIMEI" class="form-control" placeholder="Buscar por IMEI, marca o modelo (EQUIPOS)...">
+                    <button type="button" class="btn btn-outline-secondary" id="btnLimpiarBusqueda">
+                      <i class="bi bi-x-circle"></i>
+                    </button>
+                  </div>
                 </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" id="checkAll">
-                  <label class="form-check-label" for="checkAll">Seleccionar visibles</label>
+
+                <!-- Inventario EQUIPOS -->
+                <div class="card shadow-sm">
+                  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                      <i class="bi bi-phone text-primary"></i>
+                      <span><strong>Equipos (unitarios)</strong> disponibles en <?php echo htmlspecialchars($CENTRAL_NAME); ?></span>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="checkAllEquipos">
+                      <label class="form-check-label" for="checkAllEquipos">Seleccionar visibles</label>
+                    </div>
+                  </div>
+
+                  <div class="table-responsive" style="max-height:360px; overflow:auto;">
+                    <table class="table table-hover align-middle mb-0" id="tablaEquipos">
+                      <thead class="sticky">
+                        <tr>
+                          <th class="text-center">Sel</th>
+                          <th>ID Inv</th>
+                          <th>Marca</th>
+                          <th>Modelo</th>
+                          <th>Color</th>
+                          <th>IMEI1</th>
+                          <th>IMEI2</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <?php if (empty($inventario)): ?>
+                          <tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-inboxes me-1"></i>Sin equipos disponibles en <?php echo htmlspecialchars($CENTRAL_NAME); ?></td></tr>
+                        <?php else: foreach ($inventario as $row): ?>
+                          <tr data-id="<?= (int)$row['id'] ?>">
+                            <td class="text-center">
+                              <input type="checkbox" name="equipos[]" value="<?= (int)$row['id'] ?>" class="chk-equipo form-check-input">
+                            </td>
+                            <td class="td-id fw-semibold"><?= (int)$row['id'] ?></td>
+                            <td class="td-marca"><?= htmlspecialchars($row['marca']) ?></td>
+                            <td class="td-modelo"><?= htmlspecialchars($row['modelo']) ?></td>
+                            <td class="td-color"><span class="chip"><?= htmlspecialchars($row['color']) ?></span></td>
+                            <td class="td-imei1"><code><?= htmlspecialchars($row['imei1']) ?></code></td>
+                            <td class="td-imei2"><?= $row['imei2'] ? "<code>".htmlspecialchars($row['imei2'])."</code>" : "—" ?></td>
+                          </tr>
+                        <?php endforeach; endif; ?>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
 
-              <div class="table-responsive" style="max-height:360px; overflow:auto;">
-                <table class="table table-hover align-middle mb-0" id="tablaInventario">
-                  <thead class="sticky">
-                    <tr>
-                      <th class="text-center">Sel</th>
-                      <th>ID Inv</th>
-                      <th>Marca</th>
-                      <th>Modelo</th>
-                      <th>Color</th>
-                      <th>IMEI1</th>
-                      <th>IMEI2</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <?php if (empty($inventario)): ?>
-                      <tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-inboxes me-1"></i>Sin equipos disponibles en <?php echo htmlspecialchars($CENTRAL_NAME); ?></td></tr>
-                    <?php else: foreach ($inventario as $row): ?>
-                      <tr data-id="<?= (int)$row['id'] ?>">
-                        <td class="text-center">
-                          <input type="checkbox" name="equipos[]" value="<?= (int)$row['id'] ?>" class="chk-equipo form-check-input">
-                        </td>
-                        <td class="td-id fw-semibold"><?= (int)$row['id'] ?></td>
-                        <td class="td-marca"><?= htmlspecialchars($row['marca']) ?></td>
-                        <td class="td-modelo"><?= htmlspecialchars($row['modelo']) ?></td>
-                        <td class="td-color"><span class="chip"><?= htmlspecialchars($row['color']) ?></span></td>
-                        <td class="td-imei1"><code><?= htmlspecialchars($row['imei1']) ?></code></td>
-                        <td class="td-imei2"><?= $row['imei2'] ? "<code>".htmlspecialchars($row['imei2'])."</code>" : "—" ?></td>
-                      </tr>
-                    <?php endforeach; endif; ?>
-                  </tbody>
-                </table>
+              <!-- TAB ACCESORIOS -->
+              <div class="tab-pane fade" id="tab-accesorios" role="tabpanel" aria-labelledby="tab-accesorios-tab">
+                <div class="card shadow-sm">
+                  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                      <i class="bi bi-headphones text-success"></i>
+                      <span><strong>Accesorios (por piezas)</strong> disponibles en <?php echo htmlspecialchars($CENTRAL_NAME); ?></span>
+                    </div>
+                    <div class="input-group" style="max-width: 360px;">
+                      <span class="input-group-text"><i class="bi bi-search"></i></span>
+                      <input type="text" id="buscadorACC" class="form-control" placeholder="Buscar accesorio por texto...">
+                      <button type="button" class="btn btn-outline-secondary" id="btnLimpiarAcc"><i class="bi bi-x-circle"></i></button>
+                    </div>
+                  </div>
+                  <div class="table-responsive" style="max-height:360px; overflow:auto;">
+                    <table class="table table-hover align-middle mb-0" id="tablaAccesorios">
+                      <thead class="sticky">
+                        <tr>
+                          <th>Producto</th>
+                          <th>Color</th>
+                          <th class="text-end">Disponible</th>
+                          <th style="width:160px;">Traspasar</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <?php if (empty($accesorios)): ?>
+                          <tr><td colspan="4" class="text-center text-muted py-4"><i class="bi bi-inboxes me-1"></i>Sin accesorios disponibles en <?php echo htmlspecialchars($CENTRAL_NAME); ?></td></tr>
+                        <?php else: foreach ($accesorios as $a): ?>
+                          <tr>
+                            <td>
+                              <strong class="acc-label"><?= htmlspecialchars($a['marca'].' '.$a['modelo']) ?></strong>
+                              <input type="hidden" name="acc_id_producto[]" value="<?= (int)$a['id_producto'] ?>">
+                            </td>
+                            <td class="acc-color"><?= htmlspecialchars($a['color'] ?? '—') ?></td>
+                            <td class="text-end fw-semibold acc-disp"><?= (int)$a['disponible'] ?></td>
+                            <td>
+                              <input type="number" class="form-control qty-input acc-qty" name="acc_qty[]" min="0" max="<?= (int)$a['disponible'] ?>" value="0">
+                              <div class="form-text small">Máx: <?= (int)$a['disponible'] ?></div>
+                            </td>
+                          </tr>
+                        <?php endforeach; endif; ?>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
-            </div>
 
-            <!-- ACCESORIOS -->
-            <div class="card shadow-sm mt-4">
-              <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div class="d-flex align-items-center gap-2">
-                  <i class="bi bi-headphones text-success"></i>
-                  <span><strong>Accesorios (por piezas)</strong> disponibles en <?php echo htmlspecialchars($CENTRAL_NAME); ?></span>
+              <!-- TAB SCOOTERS -->
+              <div class="tab-pane fade" id="tab-scooters" role="tabpanel" aria-labelledby="tab-scooters-tab">
+                <div class="search-wrap rounded-3 mb-2">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" id="buscadorSCOOT" class="form-control" placeholder="Buscar por serie, marca o modelo (SCOOTERS)...">
+                    <button type="button" class="btn btn-outline-secondary" id="btnLimpiarScoot">
+                      <i class="bi bi-x-circle"></i>
+                    </button>
+                  </div>
                 </div>
-                <div class="input-group" style="max-width: 360px;">
-                  <span class="input-group-text"><i class="bi bi-search"></i></span>
-                  <input type="text" id="buscadorACC" class="form-control" placeholder="Buscar accesorio por texto...">
-                  <button type="button" class="btn btn-outline-secondary" id="btnLimpiarAcc"><i class="bi bi-x-circle"></i></button>
+
+                <div class="card shadow-sm">
+                  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                      <i class="bi bi-lightning-charge text-warning"></i>
+                      <span><strong>Scooters (unitarios)</strong> disponibles en <?php echo htmlspecialchars($CENTRAL_NAME); ?></span>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="checkAllScooters">
+                      <label class="form-check-label" for="checkAllScooters">Seleccionar visibles</label>
+                    </div>
+                  </div>
+                  <div class="table-responsive" style="max-height:360px; overflow:auto;">
+                    <table class="table table-hover align-middle mb-0" id="tablaScooters">
+                      <thead class="sticky">
+                        <tr>
+                          <th class="text-center">Sel</th>
+                          <th>ID Inv</th>
+                          <th>Marca</th>
+                          <th>Modelo</th>
+                          <th>Color</th>
+                          <th>Serie 1</th>
+                          <th>Serie 2</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <?php if (empty($scooters)): ?>
+                          <tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-inboxes me-1"></i>Sin Scooters disponibles en <?php echo htmlspecialchars($CENTRAL_NAME); ?></td></tr>
+                        <?php else: foreach ($scooters as $s): ?>
+                          <tr data-id="<?= (int)$s['id'] ?>">
+                            <td class="text-center">
+                              <!-- Ojo: usamos el mismo name 'equipos[]' para que el backend no cambie -->
+                              <input type="checkbox" name="equipos[]" value="<?= (int)$s['id'] ?>" class="chk-equipo form-check-input">
+                            </td>
+                            <td class="td-id fw-semibold"><?= (int)$s['id'] ?></td>
+                            <td class="td-marca"><?= htmlspecialchars($s['marca']) ?></td>
+                            <td class="td-modelo"><?= htmlspecialchars($s['modelo']) ?></td>
+                            <td class="td-color"><span class="chip"><?= htmlspecialchars($s['color']) ?></span></td>
+                            <td class="td-imei1"><code><?= htmlspecialchars($s['serie1']) ?></code></td>
+                            <td class="td-imei2"><?= $s['serie2'] ? "<code>".htmlspecialchars($s['serie2'])."</code>" : "—" ?></td>
+                          </tr>
+                        <?php endforeach; endif; ?>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-              <div class="table-responsive" style="max-height:360px; overflow:auto;">
-                <table class="table table-hover align-middle mb-0" id="tablaAccesorios">
-                  <thead class="sticky">
-                    <tr>
-                      <th>Producto</th>
-                      <th>Color</th>
-                      <th class="text-end">Disponible</th>
-                      <th style="width:160px;">Traspasar</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <?php if (empty($accesorios)): ?>
-                      <tr><td colspan="4" class="text-center text-muted py-4"><i class="bi bi-inboxes me-1"></i>Sin accesorios disponibles en <?php echo htmlspecialchars($CENTRAL_NAME); ?></td></tr>
-                    <?php else: foreach ($accesorios as $a): ?>
-                      <tr>
-                        <td>
-                          <strong class="acc-label"><?= htmlspecialchars($a['marca'].' '.$a['modelo']) ?></strong>
-                          <input type="hidden" name="acc_id_producto[]" value="<?= (int)$a['id_producto'] ?>">
-                        </td>
-                        <td class="acc-color"><?= htmlspecialchars($a['color'] ?? '—') ?></td>
-                        <td class="text-end fw-semibold acc-disp"><?= (int)$a['disponible'] ?></td>
-                        <td>
-                          <input type="number" class="form-control qty-input acc-qty" name="acc_qty[]" min="0" max="<?= (int)$a['disponible'] ?>" value="0">
-                          <div class="form-text small">Máx: <?= (int)$a['disponible'] ?></div>
-                        </td>
-                      </tr>
-                    <?php endforeach; endif; ?>
-                  </tbody>
-                </table>
               </div>
             </div>
 
@@ -538,15 +651,15 @@ while ($row = $resSuc->fetch_assoc()) $sucursales[] = $row;
                       <div class="col-md-4">
                         <div class="small text-uppercase text-muted">Totales</div>
                         <div class="fw-semibold">
-                          <span id="resCantidad">0</span> equipos ·
+                          <span id="resCantidad">0</span> unitarios (equipos/Scooters) ·
                           <span id="resAccSum">0</span> accesorios
                         </div>
                       </div>
                     </div>
-                    <div class="mb-2 small text-muted">Equipos seleccionados:</div>
+                    <div class="mb-2 small text-muted">Unitarios seleccionados:</div>
                     <div class="table-responsive">
                       <table class="table table-sm table-striped align-middle mb-0">
-                        <thead><tr><th>ID</th><th>Marca</th><th>Modelo</th><th>IMEI1</th><th>IMEI2</th></tr></thead>
+                        <thead><tr><th>ID</th><th>Marca</th><th>Modelo</th><th>Serie/IMEI 1</th><th>Serie/IMEI 2</th></tr></thead>
                         <tbody id="resTbody"></tbody>
                       </table>
                     </div>
@@ -568,7 +681,7 @@ while ($row = $resSuc->fetch_assoc()) $sucursales[] = $row;
       </form>
     </div>
 
-    <!-- Derecha / Carrito sticky (equipos + accesorios) -->
+    <!-- Derecha / Carrito sticky (equipos + accesorios + scooters) -->
     <div class="col-lg-4">
       <div class="card shadow-sm sticky-aside">
         <div class="card-header d-flex align-items-center justify-content-between">
@@ -622,43 +735,78 @@ while ($row = $resSuc->fetch_assoc()) $sucursales[] = $row;
   </div>
 </div>
 
-<!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script> -->
+<!-- Se asume que Bootstrap JS ya está cargado en navbar.php -->
 <script>
 // ------- Filtro EQUIPOS -------
 const buscador = document.getElementById('buscadorIMEI');
-buscador.addEventListener('keyup', () => {
-  const f = buscador.value.toLowerCase();
-  document.querySelectorAll('#tablaInventario tbody tr').forEach(tr=>{
-    tr.style.display = tr.innerText.toLowerCase().includes(f) ? '' : 'none';
+if (buscador) {
+  buscador.addEventListener('keyup', () => {
+    const f = buscador.value.toLowerCase();
+    document.querySelectorAll('#tablaEquipos tbody tr').forEach(tr=>{
+      tr.style.display = tr.innerText.toLowerCase().includes(f) ? '' : 'none';
+    });
   });
-});
-document.getElementById('btnLimpiarBusqueda').addEventListener('click', () => {
-  buscador.value = ''; buscador.dispatchEvent(new Event('keyup')); buscador.focus();
-});
+  document.getElementById('btnLimpiarBusqueda').addEventListener('click', () => {
+    buscador.value = ''; buscador.dispatchEvent(new Event('keyup')); buscador.focus();
+  });
+}
 
 // ------- Filtro ACCESORIOS -------
 const buscAcc = document.getElementById('buscadorACC');
-buscAcc.addEventListener('keyup', ()=>{
-  const f = buscAcc.value.toLowerCase();
-  document.querySelectorAll('#tablaAccesorios tbody tr').forEach(tr=>{
-    const txt = tr.innerText.toLowerCase();
-    tr.style.display = txt.includes(f) ? '' : 'none';
+if (buscAcc) {
+  buscAcc.addEventListener('keyup', ()=>{
+    const f = buscAcc.value.toLowerCase();
+    document.querySelectorAll('#tablaAccesorios tbody tr').forEach(tr=>{
+      const txt = tr.innerText.toLowerCase();
+      tr.style.display = txt.includes(f) ? '' : 'none';
+    });
   });
-});
-document.getElementById('btnLimpiarAcc').addEventListener('click', ()=>{
-  buscAcc.value=''; buscAcc.dispatchEvent(new Event('keyup')); buscAcc.focus();
-});
+  document.getElementById('btnLimpiarAcc').addEventListener('click', ()=>{
+    buscAcc.value=''; buscAcc.dispatchEvent(new Event('keyup')); buscAcc.focus();
+  });
+}
+
+// ------- Filtro SCOOTERS -------
+const buscScoot = document.getElementById('buscadorSCOOT');
+if (buscScoot) {
+  buscScoot.addEventListener('keyup', () => {
+    const f = buscScoot.value.toLowerCase();
+    document.querySelectorAll('#tablaScooters tbody tr').forEach(tr=>{
+      tr.style.display = tr.innerText.toLowerCase().includes(f) ? '' : 'none';
+    });
+  });
+  document.getElementById('btnLimpiarScoot').addEventListener('click', () => {
+    buscScoot.value=''; buscScoot.dispatchEvent(new Event('keyup')); buscScoot.focus();
+  });
+}
 
 // ------- Seleccionar visibles (equipos) -------
-document.getElementById('checkAll').addEventListener('change', function(){
-  const checked = this.checked;
-  document.querySelectorAll('#tablaInventario tbody tr').forEach(tr=>{
-    if (tr.style.display !== 'none') {
-      const chk = tr.querySelector('.chk-equipo'); if (chk) chk.checked = checked;
-    }
+const chkAllEq = document.getElementById('checkAllEquipos');
+if (chkAllEq) {
+  chkAllEq.addEventListener('change', function(){
+    const checked = this.checked;
+    document.querySelectorAll('#tablaEquipos tbody tr').forEach(tr=>{
+      if (tr.style.display !== 'none') {
+        const chk = tr.querySelector('.chk-equipo'); if (chk) chk.checked = checked;
+      }
+    });
+    rebuildSelection();
   });
-  rebuildSelection();
-});
+}
+
+// ------- Seleccionar visibles (scooters) -------
+const chkAllScoot = document.getElementById('checkAllScooters');
+if (chkAllScoot) {
+  chkAllScoot.addEventListener('change', function(){
+    const checked = this.checked;
+    document.querySelectorAll('#tablaScooters tbody tr').forEach(tr=>{
+      if (tr.style.display !== 'none') {
+        const chk = tr.querySelector('.chk-equipo'); if (chk) chk.checked = checked;
+      }
+    });
+    rebuildSelection();
+  });
+}
 
 // ------- Helpers accesorios -------
 function accSumCurrent(){
@@ -673,28 +821,31 @@ function enableConfirmIfAny(){
   const eqCount = document.querySelectorAll('.chk-equipo:checked').length;
   const accCount = accSumCurrent();
   const any = (eqCount>0 || accCount>0);
-  document.getElementById('btnAbrirModal').disabled = !any;
+  const btnAbrir = document.getElementById('btnAbrirModal');
+  if (btnAbrir) btnAbrir.disabled = !any;
 }
 
-// ------- Carrito (equipos + accesorios) -------
+// ------- Carrito (equipos + accesorios + scooters) -------
 function rebuildSelection(){
   const tbody = document.querySelector('#tablaSeleccion tbody');
+  if (!tbody) return;
   tbody.innerHTML = '';
   let eqCount = 0;
   let accCount = 0;
 
-  // Equipos
+  // Unitarios (equipos + scooters)
   document.querySelectorAll('.chk-equipo:checked').forEach(chk=>{
     const tr = chk.closest('tr');
-    const id    = tr.querySelector('.td-id').textContent.trim();
-    const marca = tr.querySelector('.td-marca').textContent.trim();
-    const modelo= tr.querySelector('.td-modelo').textContent.trim();
-    const imei  = tr.querySelector('.td-imei1').textContent.trim();
+    if (!tr) return;
+    const id    = tr.querySelector('.td-id')?.textContent.trim() || '';
+    const marca = tr.querySelector('.td-marca')?.textContent.trim() || '';
+    const modelo= tr.querySelector('.td-modelo')?.textContent.trim() || '';
+    const serie = tr.querySelector('.td-imei1')?.textContent.trim() || '';
     const row = document.createElement('tr');
     row.innerHTML = `
       <td class="fw-semibold">#${id}</td>
       <td>${marca} ${modelo}</td>
-      <td><code>${imei}</code></td>
+      <td><code>${serie}</code></td>
       <td class="text-end">
         <button type="button" class="btn btn-sm btn-outline-danger item-remove" data-kind="eq" data-id="${id}">
           <i class="bi bi-x-lg"></i>
@@ -710,7 +861,9 @@ function rebuildSelection(){
     const qty = parseInt(qtyEl?.value||'0',10);
     if (!qty || qty<=0) return;
 
-    const idProd = tr.querySelector('input[name="acc_id_producto[]"]').value;
+    const hidden = tr.querySelector('input[name="acc_id_producto[]"]');
+    if (!hidden) return;
+    const idProd = hidden.value;
     const label  = tr.querySelector('.acc-label')?.innerText?.trim() || 'Accesorio';
     const color  = tr.querySelector('.acc-color')?.innerText?.trim() || '';
     const info   = `${color ? color+' · ' : ''}${qty} pza(s)`;
@@ -735,6 +888,8 @@ function rebuildSelection(){
 
   enableConfirmIfAny();
 }
+
+// Eventos de selección
 document.querySelectorAll('.chk-equipo').forEach(chk => chk.addEventListener('change', rebuildSelection));
 document.querySelectorAll('#tablaAccesorios input.acc-qty').forEach(inp=>{
   inp.addEventListener('input', ()=>{
@@ -745,26 +900,35 @@ document.querySelectorAll('#tablaAccesorios input.acc-qty').forEach(inp=>{
   });
 });
 
-// Quitar desde carrito (equipo o accesorio)
-document.querySelector('#tablaSeleccion tbody').addEventListener('click', (e)=>{
-  const btn = e.target.closest('.item-remove'); if (!btn) return;
-  const kind = btn.getAttribute('data-kind');
-  if (kind === 'eq') {
-    const id = btn.getAttribute('data-id');
-    const chk = document.querySelector(`.chk-equipo[value="${id}"]`);
-    if (chk) chk.checked = false;
-  } else if (kind === 'acc') {
-    const pid = btn.getAttribute('data-pid');
-    document.querySelectorAll('#tablaAccesorios tbody tr').forEach(tr=>{
-      const hidden = tr.querySelector('input[name="acc_id_producto[]"]');
-      if (hidden && hidden.value === pid) {
-        const qtyEl = tr.querySelector('input.acc-qty');
-        if (qtyEl) qtyEl.value = 0;
-      }
-    });
-  }
-  rebuildSelection();
-});
+// Quitar desde carrito (unitario o accesorio)
+const tablaSelBody = document.querySelector('#tablaSeleccion tbody');
+if (tablaSelBody) {
+  tablaSelBody.addEventListener('click', (e)=>{
+    const btn = e.target.closest('.item-remove'); 
+    if (!btn) return;
+    const kind = btn.getAttribute('data-kind');
+    if (kind === 'eq') {
+      const id = btn.getAttribute('data-id');
+      // desmarcar checkbox correspondiente en las tablas
+      document.querySelectorAll('.chk-equipo').forEach(chk=>{
+        const tr = chk.closest('tr');
+        const tdId = tr?.querySelector('.td-id')?.textContent.trim();
+        if (tdId === id) chk.checked = false;
+      });
+    } else if (kind === 'acc') {
+      const pid = btn.getAttribute('data-pid');
+      // poner en 0 la cantidad para ese producto
+      document.querySelectorAll('#tablaAccesorios tbody tr').forEach(tr=>{
+        const hidden = tr.querySelector('input[name="acc_id_producto[]"]');
+        if (hidden && hidden.value === pid) {
+          const qtyEl = tr.querySelector('input.acc-qty');
+          if (qtyEl) qtyEl.value = 0;
+        }
+      });
+    }
+    rebuildSelection();
+  });
+}
 
 // ------- Destino en textos auxiliares -------
 document.getElementById('sucursal_destino').addEventListener('change', function(){
@@ -781,16 +945,19 @@ function openResumen(){
 
   const accItems = Array.from(document.querySelectorAll('#tablaAccesorios tbody tr'))
     .map(tr=>{
-      const pid = tr.querySelector('input[name="acc_id_producto[]"]').value;
-      const qty = parseInt(tr.querySelector('input.acc-qty').value||'0',10);
+      const hidden = tr.querySelector('input[name="acc_id_producto[]"]');
+      const qtyEl = tr.querySelector('input.acc-qty');
+      if (!hidden || !qtyEl) return null;
+      const pid = hidden.value;
+      const qty = parseInt(qtyEl.value||'0',10);
       const prodTxt = tr.querySelector('.acc-label')?.innerText?.trim() || 'Accesorio';
       const color = tr.querySelector('.acc-color')?.innerText?.trim() || '';
       return {pid, qty, prodTxt, color};
     })
-    .filter(x=>x.qty>0);
+    .filter(x=>x && x.qty>0);
 
   if (!sel.value){ alert('Selecciona una sucursal destino.'); sel.focus(); return; }
-  if (seleccionados.length === 0 && accItems.length === 0){ alert('Selecciona equipos o captura cantidades de accesorios.'); return; }
+  if (seleccionados.length === 0 && accItems.length === 0){ alert('Selecciona equipos/Scooters o captura cantidades de accesorios.'); return; }
 
   document.getElementById('resSucursal').textContent = sel.options[sel.selectedIndex].text;
   document.getElementById('resCantidad').textContent = seleccionados.length;
@@ -799,11 +966,11 @@ function openResumen(){
   const tbody = document.getElementById('resTbody'); tbody.innerHTML = '';
   seleccionados.forEach(chk=>{
     const tr = chk.closest('tr');
-    const id    = tr.querySelector('.td-id').textContent.trim();
-    const marca = tr.querySelector('.td-marca').textContent.trim();
-    const modelo= tr.querySelector('.td-modelo').textContent.trim();
-    const imei1 = tr.querySelector('.td-imei1').textContent.trim();
-    const imei2 = tr.querySelector('.td-imei2').textContent.trim();
+    const id    = tr.querySelector('.td-id')?.textContent.trim() || '';
+    const marca = tr.querySelector('.td-marca')?.textContent.trim() || '';
+    const modelo= tr.querySelector('.td-modelo')?.textContent.trim() || '';
+    const imei1 = tr.querySelector('.td-imei1')?.textContent.trim() || '';
+    const imei2 = tr.querySelector('.td-imei2')?.textContent.trim() || '';
     const row = document.createElement('tr');
     row.innerHTML = `<td>${id}</td><td>${marca}</td><td>${modelo}</td><td>${imei1}</td><td>${imei2 || '—'}</td>`;
     tbody.appendChild(row);
