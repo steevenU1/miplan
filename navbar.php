@@ -174,6 +174,7 @@ if (($rolUsuario === 'GerenteZona')) {
 
 $esAdmin = in_array($rolUsuario, ['Admin', 'Super'], true);
 $primerNombre = first_name($nombreUsuario);
+$ICC_ACTIVO = false; //para activar inventario ciclico 
 
 /* ===== Dinámica: ¿sucursal sin gerente activo? y permisos derivados ===== */
 $sucursalSinGerente = false;
@@ -228,7 +229,8 @@ $grpInventario = [
   'traspasos_pendientes_zona.php',
   'inventario_sims_resumen.php',
   'retiro_sims.php',
-  'payjoy_tc_inventario.php'
+  'payjoy_tc_inventario.php',
+  'inventarios_ciclicos_admin.php'
 ];
 
 $grpCompras    = ['compras_nueva.php', 'compras_resumen.php', 'modelos.php', 'proveedores.php', 'compras_ingreso.php'];
@@ -248,6 +250,7 @@ $grpOperacion  = ['lista_precios.php', 'prospectos.php', 'insumos_pedido.php', '
 $grpRH         = ['reporte_nomina.php', 'reporte_nomina_gerentes_zona.php', 'admin_expedientes.php', 'admin_asistencias.php', 'productividad_ejecutivo.php'];
 $grpOperativos = [
   'tickets_nuevo.php',
+  'portal_solicitante_listado.php',
   'insumos_catalogo.php',
   'actualizar_precios_modelo.php',
   'cuotas_mensuales.php',
@@ -783,6 +786,33 @@ function item_active(string $f, string $c): string
                 <?php endif; ?>
               <?php endif; ?>
             <?php endif; ?>
+
+            <?php if (in_array($rolUsuario, ['Admin', 'Gerente'], true)): ?>
+              <li>
+                <hr class="dropdown-divider">
+              </li>
+              <li class="dropdown-header">ICC</li>
+
+              <?php if ($ICC_ACTIVO): ?>
+                <li>
+                  <a class="dropdown-item <?= item_active('inventarios_ciclicos_admin.php', $current) ?>"
+                    href="inventarios_ciclicos_admin.php">
+                    Inventario Cíclico
+                  </a>
+                </li>
+              <?php else: ?>
+                <li>
+                  <a class="dropdown-item disabled d-flex justify-content-between align-items-center"
+                    href="#"
+                    tabindex="-1"
+                    aria-disabled="true"
+                    title="Próximamente">
+                    <span>Inventario Cíclico</span>
+                    <span class="nav-badge badge-soft-info">Próximamente.</span>
+                  </a>
+                </li>
+              <?php endif; ?>
+            <?php endif; ?>
           </ul>
         </li>
 
@@ -860,7 +890,7 @@ function item_active(string $f, string $c): string
                 <li class="dropdown-header">Historial global</li>
                 <li>
                   <a class="dropdown-item <?= item_active('historial_traspasos.php', $current) ?>" href="historial_traspasos.php">
-                    <i class=" "></i>Historial (Equipos + SIMs)
+                    <i class="bi bi-archive me-1"></i>Historial (Equipos + SIMs)
                   </a>
                 </li>
               <?php endif; ?>
@@ -956,11 +986,19 @@ function item_active(string $f, string $c): string
               <i class="bi bi-tools"></i>Operativos
             </a>
             <ul class="dropdown-menu">
+
+              <li class="dropdown-header"><i class="bi bi-cpu me-1"></i>Sistemas</li>
               <li>
                 <a class="dropdown-item <?= item_active('tickets_nuevo.php', $current) ?>" href="tickets_nuevo.php">
                   <i class="bi bi-ticket-detailed me-1"></i>Tickets Central
                 </a>
               </li>
+              <li>
+                <a class="dropdown-item <?= item_active('portal_solicitante_listado.php', $current) ?>" href="portal_solicitante_listado.php">
+                  <i class="bi bi-code-slash me-1"></i>Solicitud de Desarrollo
+                </a>
+              </li>
+
               <li>
                 <hr class="dropdown-divider">
               </li>
@@ -972,6 +1010,7 @@ function item_active(string $f, string $c): string
               <li>
                 <hr class="dropdown-divider">
               </li>
+
               <li class="dropdown-header">Cuotas & Comisiones</li>
               <li><a class="dropdown-item <?= item_active('cuotas_mensuales.php', $current) ?>" href="cuotas_mensuales.php">Cuotas sucursales (mensual)</a></li>
               <li><a class="dropdown-item <?= item_active('cuotas_mensuales_ejecutivos.php', $current) ?>" href="cuotas_mensuales_ejecutivos.php">Cuotas ejecutivos (mensual)</a></li>
@@ -985,14 +1024,10 @@ function item_active(string $f, string $c): string
               <li>
                 <hr class="dropdown-divider">
               </li>
-              <li class="dropdown-header">Cargas masivas</li>
+
+              <li class="dropdown-header">Cargas masivas & Altas</li>
               <li><a class="dropdown-item <?= item_active('carga_masiva_productos.php', $current) ?>" href="carga_masiva_productos.php">Carga masiva de productos</a></li>
               <li><a class="dropdown-item <?= item_active('carga_masiva_sims.php', $current) ?>" href="carga_masiva_sims.php">Carga masiva de SIMs</a></li>
-
-              <li>
-                <hr class="dropdown-divider">
-              </li>
-              <li class="dropdown-header">Altas</li>
               <li><a class="dropdown-item <?= item_active('alta_usuario.php', $current) ?>" href="alta_usuario.php">Alta de usuario</a></li>
               <li><a class="dropdown-item <?= item_active('alta_sucursal.php', $current) ?>" href="alta_sucursal.php">Alta de sucursal</a></li>
             </ul>
